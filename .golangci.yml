@@ -1,0 +1,21 @@
+version: "2"
+
+issues:
+  # Only flag issues introduced by the current PR/branch, so the
+  # pre-existing upstream baseline doesn't block CI.
+  new-from-merge-base: origin/master
+
+linters:
+  default: standard
+  enable:
+    - misspell
+    - unconvert
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+
+formatters:
+  enable:
+    - gofmt

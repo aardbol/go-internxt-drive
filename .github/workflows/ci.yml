@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go:
+          - { version-file: true, label: go.mod }
+          - { version-file: false, label: stable }
+    name: test (${{ matrix.go.label }})
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: matrix.go.version-file
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: "!matrix.go.version-file"
+        with:
+          go-version: stable
+
+      - name: gofmt
+        run: test -z "$(gofmt -l . | tee /dev/stderr)"
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: build
+        run: go build ./...
+
+      # Integration tests hit the real Internxt service and require
+      # credentials; skipped on fork PRs where secrets are unavailable.
+      - name: test
+        id: test
+        if: env.INTERNXT_TEST_EMAIL != ''
+        env:
+          INTERNXT_TEST_EMAIL: ${{ secrets.INTERNXT_TEST_EMAIL }}
+          INTERNXT_TEST_PASSWORD: ${{ secrets.INTERNXT_TEST_PASSWORD }}
+        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
+        if: matrix.go.label == 'go.mod' && steps.test.outcome == 'success'
+        with:
+          files: coverage.out
+          token: ${{ secrets.CODECOV_TOKEN }}
