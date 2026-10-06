@@ -18,7 +18,7 @@ func TestWorkspacesIntegration(t *testing.T) {
 }
 
 func getWorkspaces(t *testing.T) *client.WorkspacesResponse {
-	workspacesResponse, err := c.Workspaces.GetWorkspaces()
+	workspacesResponse, err := c.Workspaces.GetWorkspaces(testCtx)
 	if err != nil {
 		t.Fatalf("Error getting workspaces: %v", err)
 	}

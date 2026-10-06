@@ -62,7 +62,7 @@ func TestFilesIntegration(t *testing.T) {
 }
 
 func getRecentFiles(t *testing.T, limit int) []internxtclient.File {
-	files, err := c.Files.GetRecentFiles(limit)
+	files, err := c.Files.GetRecentFiles(testCtx, limit)
 	if err != nil {
 		t.Fatalf("can't get recent files: %v", err)
 	}
@@ -73,14 +73,14 @@ func getRecentFiles(t *testing.T, limit int) []internxtclient.File {
 }
 
 func deleteFile(t *testing.T, uuid string) {
-	err := c.Files.DeleteFile(uuid)
+	err := c.Files.DeleteFile(testCtx, uuid)
 	if err != nil {
 		t.Fatalf("can't delete file %s: %v", uuid, err)
 	}
 }
 
 func moveFile(t *testing.T, uuid string, targetFolderUUID string) *internxtclient.File {
-	movedFile, err := c.Files.MoveFile(uuid, targetFolderUUID)
+	movedFile, err := c.Files.MoveFile(testCtx, uuid, targetFolderUUID)
 	if err != nil {
 		t.Fatalf("can't move file: %v", err)
 	}
@@ -101,7 +101,7 @@ func moveFile(t *testing.T, uuid string, targetFolderUUID string) *internxtclien
 func updateFileMefa(t *testing.T, uuid string, newName string) *internxtclient.File {
 	newType := newName + "ext"
 	newValues := internxtclient.UpdateFileMetaRequest{PlainName: &newName, Type: &newType}
-	updatedFile, err := c.Files.UpdateFileMeta(uuid, &newValues)
+	updatedFile, err := c.Files.UpdateFileMeta(testCtx, uuid, &newValues)
 	if err != nil {
 		t.Fatalf("can't update file meta: %v", err)
 	}
@@ -123,7 +123,7 @@ func updateFileMefa(t *testing.T, uuid string, newName string) *internxtclient.F
 }
 
 func getFileMeta(t *testing.T, uuid string) *internxtclient.File {
-	file, err := c.Files.GetFileMeta(uuid)
+	file, err := c.Files.GetFileMeta(testCtx, uuid)
 	if err != nil {
 		t.Fatalf("can't get file meta: %v", err)
 	}

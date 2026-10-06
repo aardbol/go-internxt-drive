@@ -114,7 +114,7 @@ type FinishUploadResp struct {
 }
 
 // GetBucketFileInfo calls the correct /info endpoint and parses its JSON.
-func (b *BucketsService) GetBucketFileInfo(bucketID, fileID string) (*BucketFileInfo, error) {
+func (b *BucketsService) GetBucketFileInfo(ctx context.Context, bucketID, fileID string) (*BucketFileInfo, error) {
 	if !b.client.hasUserData() {
 		return nil, fmt.Errorf("can't get bucket file info, client has no user data")
 	}
@@ -127,7 +127,7 @@ func (b *BucketsService) GetBucketFileInfo(bucketID, fileID string) (*BucketFile
 	headers.Set("Authorization", b.client.UserData.BasicAuthHeader)
 	headers.Set("x-api-version", "2")
 
-	if resp, err := b.client.Get(APITypeBucket, endpoint, &info, &headers); err != nil {
+	if resp, err := b.client.Get(ctx, APITypeBucket, endpoint, &info, &headers); err != nil {
 		return nil, b.client.GetError(endpoint, resp, err)
 	}
 
@@ -135,8 +135,8 @@ func (b *BucketsService) GetBucketFileInfo(bucketID, fileID string) (*BucketFile
 }
 
 // Downloads a file by its ID and places it at destination
-func (b *BucketsService) DownloadFile(fileID, destination string) error {
-	readCloser, err := b.DownloadFileStream(fileID)
+func (b *BucketsService) DownloadFile(ctx context.Context, fileID, destination string) error {
+	readCloser, err := b.DownloadFileStream(ctx, fileID)
 	if err != nil {
 		return b.client.GetError("", nil, err)
 	}
@@ -168,30 +168,30 @@ var (
 // DownloadFileStream returns a ReadCloser that streams the decrypted contents
 // of the file with the given UUID. The caller must close the returned ReadCloser.
 // It takes an optional range header in the format of either "bytes=100-199" or "bytes=100-".
-func (b *BucketsService) DownloadFileStream(fileID string, optionalRange ...string) (io.ReadCloser, error) {
+func (b *BucketsService) DownloadFileStream(ctx context.Context, fileID string, optionalRange ...string) (io.ReadCloser, error) {
 	rangeValue := ""
 	if len(optionalRange) > 0 {
 		rangeValue = optionalRange[0]
 	}
 
-	return b.downloadFileStream(fileID, rangeValue, false)
+	return b.downloadFileStream(ctx, fileID, rangeValue, false)
 }
 
-// DownloadFileStreamVerified is like DownloadFileStream but verifies the SHA-1/ hash of the encrypted shard against
+// DownloadFileStreamVerified is like DownloadFileStream but verifies the SHA-1 hash of the encrypted shard against
 // the hash recorded in the file info while streaming. A mismatch (ErrShardHashMismatch) surfaces from Read at end of
 // stream or from Close when the stream is closed early.
 // Whole-file downloads only: a partial range would not hash to the stored value.
-func (b *BucketsService) DownloadFileStreamVerified(fileID string) (io.ReadCloser, error) {
-	return b.downloadFileStream(fileID, "", true)
+func (b *BucketsService) DownloadFileStreamVerified(ctx context.Context, fileID string) (io.ReadCloser, error) {
+	return b.downloadFileStream(ctx, fileID, "", true)
 }
 
-func (b *BucketsService) downloadFileStream(fileID, rangeValue string, verifyHash bool) (io.ReadCloser, error) {
+func (b *BucketsService) downloadFileStream(ctx context.Context, fileID, rangeValue string, verifyHash bool) (io.ReadCloser, error) {
 	if !b.client.hasUserDataAccessDataUser() {
 		return nil, fmt.Errorf("no user data available when downloading file %s", fileID)
 	}
 
 	// 1) Fetch file info (including shards and index)
-	info, err := b.GetBucketFileInfo(b.client.UserData.AccessData.User.Bucket, fileID)
+	info, err := b.GetBucketFileInfo(ctx, b.client.UserData.AccessData.User.Bucket, fileID)
 	if err != nil {
 		return nil, err
 	}
@@ -234,7 +234,7 @@ func (b *BucketsService) downloadFileStream(fileID, rangeValue string, verifyHas
 				adjustedRange = fmt.Sprintf("bytes=%d-%d", alignedStart, endByte)
 			}
 
-			stream, err := b.downloadFileStream(fileID, adjustedRange, false)
+			stream, err := b.downloadFileStream(ctx, fileID, adjustedRange, false)
 			if err != nil {
 				return nil, err
 			}
@@ -251,7 +251,7 @@ func (b *BucketsService) downloadFileStream(fileID, rangeValue string, verifyHas
 	}
 
 	// 4) Download the encrypted shard, include the Range header if any
-	req, err := http.NewRequest("GET", shard.URL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", shard.URL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -259,7 +259,7 @@ func (b *BucketsService) downloadFileStream(fileID, rangeValue string, verifyHas
 		req.Header.Set("Range", rangeValue)
 	}
 
-	resp, err := b.client.doRawGET(req)
+	resp, err := b.client.doRawGET(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -319,7 +319,7 @@ func (r *shardHashReader) Close() error {
 // UploadFileStream uploads data from the provided io.Reader into Internxt,
 // encrypting it on the fly and creating the metadata file in the target folder.
 // It returns the CreateMetaResponse of the created file entry.
-func (b *BucketsService) UploadFileStream(targetFolderUUID, fileName string, in io.Reader, plainSize int64, modTime time.Time) (*CreateMetaResponse, error) {
+func (b *BucketsService) UploadFileStream(ctx context.Context, targetFolderUUID, fileName string, in io.Reader, plainSize int64, modTime time.Time) (*CreateMetaResponse, error) {
 	if !b.client.hasUserDataAccessDataUser() {
 		return nil, fmt.Errorf("no user data available when uploading file %s", fileName)
 	}
@@ -352,7 +352,7 @@ func (b *BucketsService) UploadFileStream(targetFolderUUID, fileName string, in 
 	r := io.TeeReader(encReader, sha1Hasher)
 
 	specs := []UploadPartSpec{{Index: 0, Size: plainSize}}
-	startResp, err := b.StartUpload(b.client.UserData.AccessData.User.Bucket, specs)
+	startResp, err := b.StartUpload(ctx, b.client.UserData.AccessData.User.Bucket, specs)
 	if err != nil {
 		return nil, err
 	}
@@ -363,13 +363,13 @@ func (b *BucketsService) UploadFileStream(targetFolderUUID, fileName string, in 
 
 	part := startResp.Uploads[0]
 
-	if err := b.Transfer(part, r, plainSize); err != nil {
+	if err := b.Transfer(ctx, part, r, plainSize); err != nil {
 		return nil, err
 	}
 
 	encIndex := hex.EncodeToString(ph[:])
 	partHash := hex.EncodeToString(sha1Hasher.Sum(nil))
-	finishResp, err := b.FinishUpload(encIndex, []Shard{{Hash: partHash, UUID: part.UUID}})
+	finishResp, err := b.FinishUpload(ctx, encIndex, []Shard{{Hash: partHash, UUID: part.UUID}})
 	if err != nil {
 		return nil, err
 	}
@@ -377,23 +377,23 @@ func (b *BucketsService) UploadFileStream(targetFolderUUID, fileName string, in 
 	base := filepath.Base(fileName)
 	name := strings.TrimSuffix(base, filepath.Ext(base))
 	ext := strings.TrimPrefix(filepath.Ext(base), ".")
-	meta, err := b.CreateMetaFile(name, finishResp.ID, "03-aes", targetFolderUUID, name, ext, plainSize, modTime)
+	meta, err := b.CreateMetaFile(ctx, name, finishResp.ID, "03-aes", targetFolderUUID, name, ext, plainSize, modTime)
 	if err != nil {
 		return nil, err
 	}
 	return meta, nil
 }
 
-func (b *BucketsService) Transfer(part UploadPart, r io.Reader, size int64) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-	defer cancel()
+// Transfer uploads one part/shard to its pre-signed URL. Cancellation and
+// deadlines are controlled entirely through ctx.
+func (b *BucketsService) Transfer(ctx context.Context, part UploadPart, r io.Reader, size int64) error {
 	req, err := http.NewRequestWithContext(ctx, "PUT", part.URL, r)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.ContentLength = size
-	resp, err := b.client.HTTPClient.Do(req)
+	resp, err := b.client.StreamClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -406,7 +406,7 @@ func (b *BucketsService) Transfer(part UploadPart, r io.Reader, size int64) erro
 }
 
 // StartUpload reserves all parts at once
-func (b *BucketsService) StartUpload(bucketID string, parts []UploadPartSpec) (*StartUploadResp, error) {
+func (b *BucketsService) StartUpload(ctx context.Context, bucketID string, parts []UploadPartSpec) (*StartUploadResp, error) {
 	if !b.client.hasUserData() {
 		return nil, fmt.Errorf("can't start upload without user data")
 	}
@@ -419,7 +419,7 @@ func (b *BucketsService) StartUpload(bucketID string, parts []UploadPartSpec) (*
 
 	var result StartUploadResp
 
-	if resp, err := b.client.doRequestWithQuery(APITypeBase, http.MethodPost, endpoint, map[string]string{"multiparts": "1"}, &reqBody, &result, &headers); err != nil {
+	if resp, err := b.client.doRequestWithQuery(ctx, APITypeBase, http.MethodPost, endpoint, map[string]string{"multiparts": "1"}, &reqBody, &result, &headers); err != nil {
 		return nil, b.client.GetError(endpoint, resp, err)
 	}
 
@@ -543,7 +543,7 @@ func GenerateFileKey(mnemonic, bucketID, indexHex string) (key, iv []byte, err e
 	return key, iv, nil
 }
 
-func (b *BucketsService) CreateMetaFile(name, fileID, encryptVersion, folderUuid, plainName, fileType string, size int64, modTime time.Time) (*CreateMetaResponse, error) {
+func (b *BucketsService) CreateMetaFile(ctx context.Context, name, fileID, encryptVersion, folderUuid, plainName, fileType string, size int64, modTime time.Time) (*CreateMetaResponse, error) {
 	endpoint := path.Join("files")
 	reqBody := CreateMetaRequest{
 		Name:             name,
@@ -559,14 +559,14 @@ func (b *BucketsService) CreateMetaFile(name, fileID, encryptVersion, folderUuid
 
 	var result CreateMetaResponse
 
-	if resp, err := b.client.Post(APITypeDrive, endpoint, &reqBody, &result, nil); err != nil {
+	if resp, err := b.client.Post(ctx, APITypeDrive, endpoint, &reqBody, &result, nil); err != nil {
 		return nil, b.client.GetError(endpoint, resp, err)
 	}
 
 	return &result, nil
 }
 
-func (b *BucketsService) FinishUpload(index string, shards []Shard) (*FinishUploadResp, error) {
+func (b *BucketsService) FinishUpload(ctx context.Context, index string, shards []Shard) (*FinishUploadResp, error) {
 	endpoint := path.Join("network", "v2", "buckets", b.client.UserData.AccessData.User.Bucket, "files", "finish")
 	payload := map[string]interface{}{
 		"index":  index,
@@ -578,7 +578,7 @@ func (b *BucketsService) FinishUpload(index string, shards []Shard) (*FinishUplo
 	headers.Set("Authorization", b.client.UserData.BasicAuthHeader)
 	var result FinishUploadResp
 
-	if resp, err := b.client.Post(APITypeBase, endpoint, &payload, &result, &headers); err != nil {
+	if resp, err := b.client.Post(ctx, APITypeBase, endpoint, &payload, &result, &headers); err != nil {
 		return nil, b.client.GetError(endpoint, resp, err)
 	}
 

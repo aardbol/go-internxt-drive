@@ -1,6 +1,7 @@
 package internxtclient_test
 
 import (
+	"context"
 	"crypto/rand"
 	"flag"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 var (
 	testEmail      string
 	testPassword   string
+	testCtx               = context.Background()
 	testBytes      []byte = []byte{0x13, 0x09, 0x20, 0x23}
 	c              *client.Client
 	testFolderUUID string
@@ -91,7 +93,7 @@ func setupTeardownTestEnvironment() error {
 }
 
 func setupClient() error {
-	cl, err := client.NewWithCredentials(testEmail, testPassword)
+	cl, err := client.NewWithCredentials(testCtx, testEmail, testPassword)
 	if err != nil {
 		return fmt.Errorf("Couldn't set up testing client: %v", err)
 	}
@@ -106,7 +108,7 @@ func setupCreateFolderStructure() error {
 		PlainName:        TESTFOLDER,
 		ParentFolderUUID: c.UserData.AccessData.User.RootFolderUUID,
 	}
-	folder, err := c.Folders.CreateFolder(createFolderRequest)
+	folder, err := c.Folders.CreateFolder(testCtx, createFolderRequest)
 	if err != nil {
 		return fmt.Errorf("Couldn't create test folder: %v", err)
 	}
@@ -116,7 +118,7 @@ func setupCreateFolderStructure() error {
 
 func setupPurgeFolderStructure() error {
 	if testFolderUUID != "" {
-		err := c.Folders.DeleteFolder(testFolderUUID)
+		err := c.Folders.DeleteFolder(testCtx, testFolderUUID)
 		if err != nil {
 			return fmt.Errorf("Couldn't purge test folder: %v", err)
 		}

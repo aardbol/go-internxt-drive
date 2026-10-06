@@ -1,6 +1,7 @@
 package internxtclient
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/md5"
@@ -40,14 +41,14 @@ type AccessResponse struct {
 const authPath = "auth"
 
 // Login calls {DRIVE_API_URL}/auth/login with {"email":…}
-func (a *AuthService) Login(email string) (*LoginResponse, error) {
+func (a *AuthService) Login(ctx context.Context, email string) (*LoginResponse, error) {
 	endpoint := path.Join(authPath, "login")
 	payload := map[string]string{
 		"email": email,
 	}
 	var loginResponse LoginResponse
 
-	if resp, err := a.client.Post(APITypeDrive, endpoint, &payload, &loginResponse, nil); err != nil {
+	if resp, err := a.client.Post(ctx, APITypeDrive, endpoint, &payload, &loginResponse, nil); err != nil {
 		return nil, a.client.GetError(endpoint, resp, err)
 	}
 
@@ -55,10 +56,10 @@ func (a *AuthService) Login(email string) (*LoginResponse, error) {
 }
 
 // Logout calls {DRIVE_API_URL}/auth/logout. Returns error if failed.
-func (a *AuthService) Logout() error {
+func (a *AuthService) Logout(ctx context.Context) error {
 	endpoint := path.Join(authPath, "logout")
 
-	if resp, err := a.client.Get(APITypeDrive, endpoint, nil, nil); err != nil {
+	if resp, err := a.client.Get(ctx, APITypeDrive, endpoint, nil, nil); err != nil {
 		return a.client.GetError(endpoint, resp, err)
 	}
 
@@ -66,7 +67,7 @@ func (a *AuthService) Logout() error {
 }
 
 // AccessLogin calls {DRIVE_API_URL}/auth/login/access based on our previous LoginResponse
-func (a *AuthService) AccessLogin(loginResponse *LoginResponse, password string) (*AccessResponse, error) {
+func (a *AuthService) AccessLogin(ctx context.Context, loginResponse *LoginResponse, password string) (*AccessResponse, error) {
 	endpoint := path.Join(authPath, "login", "access")
 	encPwd, passwordHash, err := deriveEncryptedPasswordAndHash(password, loginResponse.SKey, a.client.Config.AppCryptoSecret)
 	if err != nil {
@@ -89,7 +90,7 @@ func (a *AuthService) AccessLogin(loginResponse *LoginResponse, password string)
 
 	var accessResponse AccessResponse
 
-	if resp, err := a.client.Post(APITypeDrive, endpoint, &req, &accessResponse, nil); err != nil {
+	if resp, err := a.client.Post(ctx, APITypeDrive, endpoint, &req, &accessResponse, nil); err != nil {
 		return nil, a.client.GetError(endpoint, resp, err)
 	}
 
@@ -118,13 +119,13 @@ func buildBasicAuthHeader(username, password string) string {
 	return "Basic " + base64.StdEncoding.EncodeToString([]byte(creds))
 }
 
-func (a *AuthService) AreCredentialsCorrect(hashedPassword string) (bool, error) {
+func (a *AuthService) AreCredentialsCorrect(ctx context.Context, hashedPassword string) (bool, error) {
 	endpoint := path.Join(authPath, "are-credentials-correct")
 	opts := map[string]string{
 		"hashedPassword": hashedPassword,
 	}
 
-	if resp, err := a.client.doRequestWithQuery(APITypeDrive, http.MethodGet, endpoint, opts, nil, nil, nil); err != nil {
+	if resp, err := a.client.doRequestWithQuery(ctx, APITypeDrive, http.MethodGet, endpoint, opts, nil, nil, nil); err != nil {
 		return false, a.client.GetError(endpoint, resp, err)
 	}
 

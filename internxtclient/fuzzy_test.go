@@ -35,7 +35,7 @@ func TestFuzzyIntegration(t *testing.T) {
 }
 
 func fuzzySearch(t *testing.T, term string) *client.SearchResponse {
-	searchResponse, err := c.Fuzzy.FuzzySearch(term, 0)
+	searchResponse, err := c.Fuzzy.FuzzySearch(testCtx, term, 0)
 	if err != nil {
 		t.Fatalf("FuzzySearch failed: %v", err)
 	}

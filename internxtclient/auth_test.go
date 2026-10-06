@@ -35,13 +35,13 @@ func TestAuthIntegration(t *testing.T) {
 
 func logout(t *testing.T, authClient *client.Client) {
 	// logout
-	err := authClient.Auth.Logout()
+	err := authClient.Auth.Logout(testCtx)
 	if err != nil {
 		t.Fatalf("error logging out: %v", err)
 	}
 
 	// check if the credentials are still correct
-	correct, err := authClient.Auth.AreCredentialsCorrect(authClient.Config.PasswordHash)
+	correct, err := authClient.Auth.AreCredentialsCorrect(testCtx, authClient.Config.PasswordHash)
 	// Error should not be nil
 	// Error should contain "Unauthorized"
 	if err != nil {
@@ -56,7 +56,7 @@ func logout(t *testing.T, authClient *client.Client) {
 
 func areCredentialsCorrect(t *testing.T, authClient *client.Client) bool {
 	// check if the credentials are correct
-	correct, err := authClient.Auth.AreCredentialsCorrect(authClient.Config.PasswordHash)
+	correct, err := authClient.Auth.AreCredentialsCorrect(testCtx, authClient.Config.PasswordHash)
 	if err != nil {
 		t.Fatalf("error checking credentials: %v", err)
 	}
@@ -69,7 +69,7 @@ func areCredentialsCorrect(t *testing.T, authClient *client.Client) bool {
 
 func login(t *testing.T) (*client.Client, *client.LoginResponse) {
 	authClient := client.NewWithDefaults()
-	loginResponse, err := authClient.Auth.Login(testEmail)
+	loginResponse, err := authClient.Auth.Login(testCtx, testEmail)
 	if err != nil {
 		t.Fatalf("couldn't log in: %v", err)
 	}
@@ -85,7 +85,7 @@ func login(t *testing.T) (*client.Client, *client.LoginResponse) {
 
 func accessLogin(t *testing.T, authClient *client.Client, loginResponse *client.LoginResponse) {
 	authClient.UserData.AccessData.User = &client.User{Email: testEmail}
-	accessResponse, err := authClient.Auth.AccessLogin(loginResponse, testPassword)
+	accessResponse, err := authClient.Auth.AccessLogin(testCtx, loginResponse, testPassword)
 	if err != nil {
 		t.Fatalf("couldn't log in: %v", err)
 	}

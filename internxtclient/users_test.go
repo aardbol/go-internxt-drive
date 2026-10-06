@@ -25,7 +25,7 @@ func TestUsersIntegration(t *testing.T) {
 }
 
 func getLimit(t *testing.T) *client.LimitResponse {
-	limit, err := c.Users.GetLimit()
+	limit, err := c.Users.GetLimit(testCtx)
 	if err != nil {
 		t.Fatalf("Error getting limit: %v", err)
 	}
@@ -37,7 +37,7 @@ func getLimit(t *testing.T) *client.LimitResponse {
 }
 
 func getUsage(t *testing.T) *client.UsageResponse {
-	usage, err := c.Users.GetUsage()
+	usage, err := c.Users.GetUsage(testCtx)
 	if err != nil {
 		t.Fatalf("Error getting usage: %v", err)
 	}
@@ -49,7 +49,7 @@ func getUsage(t *testing.T) *client.UsageResponse {
 }
 
 func getUserCredentials(t *testing.T) *client.GetUserCredentialsResponse {
-	credentials, err := c.Users.GetUserCredentials()
+	credentials, err := c.Users.GetUserCredentials(testCtx)
 	if err != nil {
 		t.Fatalf("Error getting credentials: %v", err)
 	}

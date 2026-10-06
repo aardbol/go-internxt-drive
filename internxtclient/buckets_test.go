@@ -25,7 +25,7 @@ func TestBucketsIntegration(t *testing.T) {
 }
 
 func createFile(t *testing.T, filename, destFolderUUID string) *internxtclient.CreateMetaResponse {
-	createMetaResponse, err := c.Buckets.UploadFileStream(destFolderUUID, filename, bytes.NewReader(testBytes), int64(len(testBytes)), time.Now())
+	createMetaResponse, err := c.Buckets.UploadFileStream(testCtx, destFolderUUID, filename, bytes.NewReader(testBytes), int64(len(testBytes)), time.Now())
 	if err != nil {
 		t.Fatalf("couldn't upload filestream: %v", err)
 	}

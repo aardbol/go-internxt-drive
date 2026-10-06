@@ -1,6 +1,7 @@
 package internxtclient
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"path"
@@ -43,7 +44,7 @@ const (
 )
 
 // GetPaginatedTrashFolders gets folders in trash
-func (t *TrashService) getPaginatedTrash(itemType ItemType, limit, offset int, sort SortField, order Order, root bool) ([]File, []Folder, error) {
+func (t *TrashService) getPaginatedTrash(ctx context.Context, itemType ItemType, limit, offset int, sort SortField, order Order, root bool) ([]File, []Folder, error) {
 	/*
 		url := fmt.Sprintf("%s/storage/trash/paginated?limit=%d&offset=%d&type=%s&root=%t&sort=%s&order=%s",
 			cfg.DriveAPIURL, limit, offset, ItemTypeFolders, root, sort, order)
@@ -75,14 +76,14 @@ func (t *TrashService) getPaginatedTrash(itemType ItemType, limit, offset int, s
 	}
 
 	if itemType == ItemTypeFolders {
-		if resp, err := t.client.doRequestWithStruct(APITypeDrive, http.MethodGet, endpoint, opts, nil, &folderWrapper, nil); err != nil {
+		if resp, err := t.client.doRequestWithStruct(ctx, APITypeDrive, http.MethodGet, endpoint, opts, nil, &folderWrapper, nil); err != nil {
 			return nil, nil, t.client.GetError(endpoint, resp, err)
 		}
 		return nil, folderWrapper.Result, nil
 	}
 
 	if itemType == ItemTypeFiles {
-		if resp, err := t.client.doRequestWithStruct(APITypeDrive, http.MethodGet, endpoint, opts, nil, &fileWrapper, nil); err != nil {
+		if resp, err := t.client.doRequestWithStruct(ctx, APITypeDrive, http.MethodGet, endpoint, opts, nil, &fileWrapper, nil); err != nil {
 			return nil, nil, t.client.GetError(endpoint, resp, err)
 		}
 		return fileWrapper.Result, nil, nil
@@ -92,16 +93,16 @@ func (t *TrashService) getPaginatedTrash(itemType ItemType, limit, offset int, s
 }
 
 // GetPaginatedTrashFiles gets files in trash
-func (t *TrashService) GetPaginatedTrashFiles(limit, offset int, sort SortField, order Order, root bool) ([]File, error) {
-	files, _, err := t.getPaginatedTrash(ItemTypeFiles, limit, offset, sort, order, root)
+func (t *TrashService) GetPaginatedTrashFiles(ctx context.Context, limit, offset int, sort SortField, order Order, root bool) ([]File, error) {
+	files, _, err := t.getPaginatedTrash(ctx, ItemTypeFiles, limit, offset, sort, order, root)
 	if err != nil {
 		return nil, err
 	}
 	return files, nil
 }
 
-func (t *TrashService) GetPaginatedTrashFolders(limit, offset int, sort SortField, order Order, root bool) ([]Folder, error) {
-	_, folders, err := t.getPaginatedTrash(ItemTypeFolders, limit, offset, sort, order, root)
+func (t *TrashService) GetPaginatedTrashFolders(ctx context.Context, limit, offset int, sort SortField, order Order, root bool) ([]Folder, error) {
+	_, folders, err := t.getPaginatedTrash(ctx, ItemTypeFolders, limit, offset, sort, order, root)
 	if err != nil {
 		return nil, err
 	}
@@ -109,37 +110,37 @@ func (t *TrashService) GetPaginatedTrashFolders(limit, offset int, sort SortFiel
 }
 
 // AddToTrash adds an item to trash
-func (t *TrashService) AddToTrash(items []TrashRef) error {
+func (t *TrashService) AddToTrash(ctx context.Context, items []TrashRef) error {
 	endpoint := path.Join(trashPath, "add")
 
-	if resp, err := t.client.Post(APITypeDrive, endpoint, &TrashItemsRequest{Items: items}, nil, nil); err != nil {
+	if resp, err := t.client.Post(ctx, APITypeDrive, endpoint, &TrashItemsRequest{Items: items}, nil, nil); err != nil {
 		return t.client.GetError(endpoint, resp, err)
 	}
 	return nil
 }
 
 // DeleteAllTrash deletes the entire trash
-func (t *TrashService) DeleteAllTrash() error {
+func (t *TrashService) DeleteAllTrash(ctx context.Context) error {
 	endpoint := path.Join(trashPath, "all")
-	if resp, err := t.client.Delete(APITypeDrive, endpoint, nil, nil, nil); err != nil {
+	if resp, err := t.client.Delete(ctx, APITypeDrive, endpoint, nil, nil, nil); err != nil {
 		return t.client.GetError(endpoint, resp, err)
 	}
 	return nil
 }
 
 // RequestDeleteAllTrash deletes the entire trash
-func (t *TrashService) RequestDeleteAllTrash() error {
+func (t *TrashService) RequestDeleteAllTrash(ctx context.Context) error {
 	endpoint := path.Join(trashPath, "all", "request")
-	if resp, err := t.client.Delete(APITypeDrive, endpoint, nil, nil, nil); err != nil {
+	if resp, err := t.client.Delete(ctx, APITypeDrive, endpoint, nil, nil, nil); err != nil {
 		return t.client.GetError(endpoint, resp, err)
 	}
 	return nil
 }
 
 // DeleteSpecifiedTrashItems deletes items (either files or folders) identified by TrashRef from trash
-func (t *TrashService) DeleteSpecifiedTrashItems(items []TrashRef) error {
+func (t *TrashService) DeleteSpecifiedTrashItems(ctx context.Context, items []TrashRef) error {
 	endpoint := path.Join(trashPath)
-	if resp, err := t.client.Delete(APITypeDrive, endpoint, &TrashItemsRequest{Items: items}, nil, nil); err != nil {
+	if resp, err := t.client.Delete(ctx, APITypeDrive, endpoint, &TrashItemsRequest{Items: items}, nil, nil); err != nil {
 		return t.client.GetError(endpoint, resp, err)
 	}
 
@@ -147,20 +148,20 @@ func (t *TrashService) DeleteSpecifiedTrashItems(items []TrashRef) error {
 }
 
 // DeleteTrashFile deletes a file from trash. This takes FileID as input, not UUID
-func (t *TrashService) DeleteTrashFile(fileID string) error {
+func (t *TrashService) DeleteTrashFile(ctx context.Context, fileID string) error {
 	endpoint := path.Join(trashPath, "file", fileID)
 
-	if resp, err := t.client.Delete(APITypeDrive, endpoint, nil, nil, nil); err != nil {
+	if resp, err := t.client.Delete(ctx, APITypeDrive, endpoint, nil, nil, nil); err != nil {
 		return t.client.GetError(endpoint, resp, err)
 	}
 	return nil
 }
 
 // DeleteTrashFolder deletes a folder from trash.  This takes FolderID as input, not UUID
-func (t *TrashService) DeleteTrashFolder(folderID int64) error {
+func (t *TrashService) DeleteTrashFolder(ctx context.Context, folderID int64) error {
 	endpoint := path.Join(trashPath, "folder", strconv.FormatInt(folderID, 10))
 
-	if resp, err := t.client.Delete(APITypeDrive, endpoint, nil, nil, nil); err != nil {
+	if resp, err := t.client.Delete(ctx, APITypeDrive, endpoint, nil, nil, nil); err != nil {
 		return t.client.GetError(endpoint, resp, err)
 	}
 	return nil

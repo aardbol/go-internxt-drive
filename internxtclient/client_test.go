@@ -17,7 +17,7 @@ func TestClientIntegration(t *testing.T) {
 }
 
 func newWithCredentials(t *testing.T) {
-	c, err := client.NewWithCredentials(testEmail, testPassword)
+	c, err := client.NewWithCredentials(testCtx, testEmail, testPassword)
 	if err != nil {
 		t.Fatalf("Login failed: %v", err)
 	}

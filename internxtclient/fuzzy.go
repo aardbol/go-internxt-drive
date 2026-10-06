@@ -1,6 +1,7 @@
 package internxtclient
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"path"
@@ -25,13 +26,13 @@ type SearchResponse struct {
 }
 
 // FuzzySearch performs a fuzzy search with a given term and offset.
-func (f *FuzzyService) FuzzySearch(term string, offset int) (*SearchResponse, error) {
+func (f *FuzzyService) FuzzySearch(ctx context.Context, term string, offset int) (*SearchResponse, error) {
 	encodedTerm := url.PathEscape(term)
 	endpoint := path.Join("fuzzy", encodedTerm)
 
 	var result SearchResponse
 
-	if resp, err := f.client.doRequestWithQuery(APITypeDrive, http.MethodGet, endpoint, map[string]string{"offset": strconv.Itoa(offset)}, nil, &result, nil); err != nil {
+	if resp, err := f.client.doRequestWithQuery(ctx, APITypeDrive, http.MethodGet, endpoint, map[string]string{"offset": strconv.Itoa(offset)}, nil, &result, nil); err != nil {
 		return nil, f.client.GetError(endpoint, resp, err)
 	}
 

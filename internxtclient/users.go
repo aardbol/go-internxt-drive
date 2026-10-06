@@ -1,6 +1,7 @@
 package internxtclient
 
 import (
+	"context"
 	"fmt"
 	"path"
 	"time"
@@ -105,7 +106,7 @@ type UsageResponse struct {
 const userPath = "users"
 
 // GetUserCredentials gets the user's data by user uuid
-func (u *UsersService) GetUserCredentials() (*GetUserCredentialsResponse, error) {
+func (u *UsersService) GetUserCredentials(ctx context.Context) (*GetUserCredentialsResponse, error) {
 	if !u.client.hasUserDataAccessDataUser() {
 		return nil, fmt.Errorf("can't get user credentials, missing user data")
 	}
@@ -114,7 +115,7 @@ func (u *UsersService) GetUserCredentials() (*GetUserCredentialsResponse, error)
 
 	var userCredentials GetUserCredentialsResponse
 
-	resp, err := u.client.Get(APITypeDrive, endpoint, &userCredentials, nil)
+	resp, err := u.client.Get(ctx, APITypeDrive, endpoint, &userCredentials, nil)
 	if err != nil {
 		return nil, u.client.GetError(endpoint, resp, err)
 	}
@@ -123,12 +124,12 @@ func (u *UsersService) GetUserCredentials() (*GetUserCredentialsResponse, error)
 }
 
 // GetLimit calls {DRIVE_API_URL}/users/limit and returns the maximum available storage of the account.
-func (u *UsersService) GetLimit() (*LimitResponse, error) {
+func (u *UsersService) GetLimit(ctx context.Context) (*LimitResponse, error) {
 	endpoint := path.Join("users", "limit")
 
 	var limit LimitResponse
 
-	if resp, err := u.client.Get(APITypeDrive, endpoint, &limit, nil); err != nil {
+	if resp, err := u.client.Get(ctx, APITypeDrive, endpoint, &limit, nil); err != nil {
 		return nil, u.client.GetError(endpoint, resp, err)
 	}
 
@@ -136,12 +137,12 @@ func (u *UsersService) GetLimit() (*LimitResponse, error) {
 }
 
 // GetUsage calls GET {DRIVE_API_URL}/users/usage and returns the account's current usage in bytes.
-func (u *UsersService) GetUsage() (*UsageResponse, error) {
+func (u *UsersService) GetUsage(ctx context.Context) (*UsageResponse, error) {
 	endpoint := path.Join("users", "usage")
 
 	var usage UsageResponse
 
-	if resp, err := u.client.Get(APITypeDrive, endpoint, &usage, nil); err != nil {
+	if resp, err := u.client.Get(ctx, APITypeDrive, endpoint, &usage, nil); err != nil {
 		return nil, u.client.GetError(endpoint, resp, err)
 	}
 
