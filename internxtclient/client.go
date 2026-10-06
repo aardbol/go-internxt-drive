@@ -279,7 +279,7 @@ func (c *Client) doRequestOnce(method, finalURL string, body []byte, headers *ht
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return response, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(responseBody))
+		return response, &APIError{StatusCode: resp.StatusCode, Method: method, Endpoint: finalURL, Body: responseBody}
 	}
 
 	return response, nil
@@ -311,7 +311,7 @@ func (c *Client) doRawGET(req *http.Request) (*http.Response, error) {
 		lastBody, _ = io.ReadAll(resp.Body)
 		lastHeaders = resp.Header.Clone()
 		resp.Body.Close()
-		lastErr = fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(lastBody))
+		lastErr = &APIError{StatusCode: resp.StatusCode, Method: req.Method, Endpoint: req.URL.String(), Body: lastBody}
 		if shouldRetryResponse(resp.StatusCode, lastBody) && attempt < maxRequestRetries {
 			continue
 		}
