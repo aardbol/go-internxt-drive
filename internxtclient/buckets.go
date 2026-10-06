@@ -6,22 +6,23 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha1"
-	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/tyler-smith/go-bip39"
-	"golang.org/x/crypto/ripemd160"
 )
 
 type BucketsService struct {
@@ -156,17 +157,37 @@ func (b *BucketsService) DownloadFile(fileID, destination string) error {
 	return nil
 }
 
+// Errors returned by the bucket file transfer helpers.
+var (
+	ErrInvalidUploadSize     = errors.New("invalid upload size")
+	ErrFileVersionOne        = errors.New("legacy file version 1 is not supported")
+	ErrMultiShardUnsupported = errors.New("multi-shard files are not supported")
+	ErrShardHashMismatch     = errors.New("shard hash mismatch")
+)
+
 // DownloadFileStream returns a ReadCloser that streams the decrypted contents
 // of the file with the given UUID. The caller must close the returned ReadCloser.
 // It takes an optional range header in the format of either "bytes=100-199" or "bytes=100-".
 func (b *BucketsService) DownloadFileStream(fileID string, optionalRange ...string) (io.ReadCloser, error) {
-	if !b.client.hasUserDataAccessDataUser() {
-		return nil, fmt.Errorf("no user data available when downloading file %s", fileID)
-	}
-
 	rangeValue := ""
 	if len(optionalRange) > 0 {
 		rangeValue = optionalRange[0]
+	}
+
+	return b.downloadFileStream(fileID, rangeValue, false)
+}
+
+// DownloadFileStreamVerified is like DownloadFileStream but verifies the SHA-1/ hash of the encrypted shard against
+// the hash recorded in the file info while streaming. A mismatch (ErrShardHashMismatch) surfaces from Read at end of
+// stream or from Close when the stream is closed early.
+// Whole-file downloads only: a partial range would not hash to the stored value.
+func (b *BucketsService) DownloadFileStreamVerified(fileID string) (io.ReadCloser, error) {
+	return b.downloadFileStream(fileID, "", true)
+}
+
+func (b *BucketsService) downloadFileStream(fileID, rangeValue string, verifyHash bool) (io.ReadCloser, error) {
+	if !b.client.hasUserDataAccessDataUser() {
+		return nil, fmt.Errorf("no user data available when downloading file %s", fileID)
 	}
 
 	// 1) Fetch file info (including shards and index)
@@ -174,10 +195,20 @@ func (b *BucketsService) DownloadFileStream(fileID string, optionalRange ...stri
 	if err != nil {
 		return nil, err
 	}
+	if info.Version == 0 || info.Version == 1 {
+		return nil, fmt.Errorf("%w: file %s is version %d", ErrFileVersionOne, fileID, info.Version)
+	}
 	if len(info.Shards) == 0 {
 		return nil, fmt.Errorf("no shards found for file %s", fileID)
 	}
+	sort.Slice(info.Shards, func(i, j int) bool { return info.Shards[i].Index < info.Shards[j].Index })
+	if len(info.Shards) > 1 {
+		return nil, fmt.Errorf("%w: file %s has %d shards", ErrMultiShardUnsupported, fileID, len(info.Shards))
+	}
 	shard := info.Shards[0]
+	if verifyHash && shard.Hash == "" {
+		return nil, fmt.Errorf("cannot verify shard hash for file %s: hash missing from file info", fileID)
+	}
 
 	// 2) Derive fileKey and IV from the stored index
 	key, iv, err := GenerateFileKey(b.client.UserData.AccessData.User.Mnemonic, b.client.UserData.AccessData.User.Bucket, info.Index)
@@ -203,7 +234,7 @@ func (b *BucketsService) DownloadFileStream(fileID string, optionalRange ...stri
 				adjustedRange = fmt.Sprintf("bytes=%d-%d", alignedStart, endByte)
 			}
 
-			stream, err := b.DownloadFileStream(fileID, adjustedRange)
+			stream, err := b.downloadFileStream(fileID, adjustedRange, false)
 			if err != nil {
 				return nil, err
 			}
@@ -233,8 +264,12 @@ func (b *BucketsService) DownloadFileStream(fileID string, optionalRange ...stri
 		return nil, err
 	}
 
-	// 5) Wrap in AES‑CTR decryptor
-	decReader, err := DecryptReader(resp.Body, key, iv)
+	// 5) Optionally wrap the encrypted body in a SHA-1 verifying reader, then in the AES‑CTR decryptor
+	encrypted := resp.Body
+	if verifyHash {
+		encrypted = &shardHashReader{src: resp.Body, expected: shard.Hash, h: sha1.New()}
+	}
+	decReader, err := DecryptReader(encrypted, key, iv)
 	if err != nil {
 		resp.Body.Close()
 		return nil, err
@@ -244,7 +279,41 @@ func (b *BucketsService) DownloadFileStream(fileID string, optionalRange ...stri
 	return struct {
 		io.Reader
 		io.Closer
-	}{Reader: decReader, Closer: resp.Body}, nil
+	}{Reader: decReader, Closer: encrypted}, nil
+}
+
+// shardHashReader computes the SHA-1 of the encrypted bytes read from src and
+// compares it with the expected shard hash at end of stream or on Close.
+type shardHashReader struct {
+	src      io.ReadCloser
+	expected string
+	h        hash.Hash
+	done     bool
+}
+
+func (r *shardHashReader) Read(p []byte) (int, error) {
+	n, err := r.src.Read(p)
+	if n > 0 {
+		r.h.Write(p[:n])
+	}
+	if err == io.EOF && !r.done {
+		r.done = true
+		if sum := hex.EncodeToString(r.h.Sum(nil)); sum != r.expected {
+			return n, fmt.Errorf("%w: expected %s, got %s", ErrShardHashMismatch, r.expected, sum)
+		}
+	}
+	return n, err
+}
+
+func (r *shardHashReader) Close() error {
+	if !r.done {
+		r.done = true
+		_ = r.src.Close()
+		if r.expected != "" {
+			return fmt.Errorf("%w: stream closed before end of shard %s", ErrShardHashMismatch, r.expected)
+		}
+	}
+	return r.src.Close()
 }
 
 // UploadFileStream uploads data from the provided io.Reader into Internxt,
@@ -253,6 +322,10 @@ func (b *BucketsService) DownloadFileStream(fileID string, optionalRange ...stri
 func (b *BucketsService) UploadFileStream(targetFolderUUID, fileName string, in io.Reader, plainSize int64, modTime time.Time) (*CreateMetaResponse, error) {
 	if !b.client.hasUserDataAccessDataUser() {
 		return nil, fmt.Errorf("no user data available when uploading file %s", fileName)
+	}
+
+	if plainSize <= 0 {
+		return nil, fmt.Errorf("%w: %d for %s", ErrInvalidUploadSize, plainSize, fileName)
 	}
 
 	if strings.HasPrefix(fileName, ".") {
@@ -275,10 +348,8 @@ func (b *BucketsService) UploadFileStream(targetFolderUUID, fileName string, in 
 		return nil, fmt.Errorf("can't create EncryptReader: %w", err)
 	}
 
-	sha256Hasher := sha256.New()
 	sha1Hasher := sha1.New()
-	r := io.TeeReader(encReader, sha256Hasher)
-	r = io.TeeReader(r, sha1Hasher)
+	r := io.TeeReader(encReader, sha1Hasher)
 
 	specs := []UploadPartSpec{{Index: 0, Size: plainSize}}
 	startResp, err := b.StartUpload(b.client.UserData.AccessData.User.Bucket, specs)
@@ -454,23 +525,6 @@ func GenerateFileBucketKey(mnemonic, bucketID string) ([]byte, error) {
 	return GetFileDeterministicKey(seed, bucketBytes), nil
 }
 
-// GenerateBucketKey generates a 64-character hexadecimal bucket key from a mnemonic and bucket ID.
-func GenerateBucketKey(mnem string, bucketID []byte) (string, error) {
-	seed := bip39.NewSeed(mnem, "")
-	deterministicKey, err := GetDeterministicKey(seed, bucketID)
-	if err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(deterministicKey)[:64], nil
-}
-
-func GetDeterministicKey(key []byte, data []byte) ([]byte, error) {
-	hasher := sha512.New()
-	hasher.Write(key)
-	hasher.Write(data)
-	return hasher.Sum(nil), nil
-}
-
 // GenerateFileKey derives the per-file key and IV from mnemonic, bucketID, and plaintext index
 func GenerateFileKey(mnemonic, bucketID, indexHex string) (key, iv []byte, err error) {
 	bucketKey, err := GenerateFileBucketKey(mnemonic, bucketID)
@@ -487,25 +541,6 @@ func GenerateFileKey(mnemonic, bucketID, indexHex string) (key, iv []byte, err e
 	iv = indexBytes[0:16]
 
 	return key, iv, nil
-}
-
-// Calculates the hash of a file
-func CalculateFileHash(reader io.Reader) (string, error) {
-	sha256Hasher := sha256.New()
-
-	buf := make([]byte, 4096) // 4KB buffer size
-	_, err := io.CopyBuffer(sha256Hasher, reader, buf)
-	if err != nil {
-		return "", fmt.Errorf("error reading data: %v", err)
-	}
-
-	sha256Result := sha256Hasher.Sum(nil)
-
-	ripemd160Hasher := ripemd160.New()
-	ripemd160Hasher.Write(sha256Result)
-	ripemd160Result := ripemd160Hasher.Sum(nil)
-
-	return hex.EncodeToString(ripemd160Result), nil
 }
 
 func (b *BucketsService) CreateMetaFile(name, fileID, encryptVersion, folderUuid, plainName, fileType string, size int64, modTime time.Time) (*CreateMetaResponse, error) {
