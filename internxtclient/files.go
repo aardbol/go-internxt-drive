@@ -68,27 +68,46 @@ func (f *FilesService) DeleteFile(uuid string) error {
 	return nil
 }
 
+// UpdateFileMetaRequest is the payload for PUT /files/{uuid}/meta.
+// It mirrors the API's UpdateFileMetaDto so only the provided fields are sent.
+type UpdateFileMetaRequest struct {
+	PlainName *string `json:"plainName,omitempty"`
+	Type      *string `json:"type,omitempty"`
+}
+
 // UpdateFileMeta updates the metadata of a file with the given UUID.
-func (f *FilesService) UpdateFileMeta(fileUUID string, updated *File) (*File, error) {
+func (f *FilesService) UpdateFileMeta(fileUUID string, updated *UpdateFileMetaRequest) (*File, error) {
 	endpoint := path.Join(filesPath, fileUUID, "meta")
 	var updatedFile File
 
-	if resp, err := f.client.Put(APITypeDrive, endpoint, &updated, &updatedFile, nil); err != nil {
+	if resp, err := f.client.Put(APITypeDrive, endpoint, updated, &updatedFile, nil); err != nil {
 		return nil, f.client.GetError(endpoint, resp, err)
 	}
 
 	return &updatedFile, nil
 }
 
+// MoveFileRequest is the payload for PATCH /files/{uuid}.
+// Name and Type are optional: set them to rename the file or change its extension while moving;
+// pass a pointer to an empty string to clear them, and nil to keep the current values.
+type MoveFileRequest struct {
+	DestinationFolder string  `json:"destinationFolder"`
+	Name              *string `json:"name,omitempty"`
+	Type              *string `json:"type,omitempty"`
+}
+
 // MoveFile moves the file with the given UUID to the destination folder.
 func (f *FilesService) MoveFile(fileUUID, destinationFolderUUID string) (*File, error) {
+	return f.MoveFileWithRequest(fileUUID, &MoveFileRequest{DestinationFolder: destinationFolderUUID})
+}
+
+// MoveFileWithRequest moves the file with the given UUID and applies the
+// optional rename fields of the request in the same operation.
+func (f *FilesService) MoveFileWithRequest(fileUUID string, req *MoveFileRequest) (*File, error) {
 	endpoint := path.Join(filesPath, fileUUID)
 	var movedFile File
-	body := map[string]string{
-		"destinationFolder": destinationFolderUUID,
-	}
 
-	if resp, err := f.client.Patch(APITypeDrive, endpoint, &body, &movedFile, nil); err != nil {
+	if resp, err := f.client.Patch(APITypeDrive, endpoint, req, &movedFile, nil); err != nil {
 		return nil, f.client.GetError(endpoint, resp, err)
 	}
 

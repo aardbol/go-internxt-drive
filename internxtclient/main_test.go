@@ -2,6 +2,7 @@ package internxtclient_test
 
 import (
 	"crypto/rand"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -21,6 +22,12 @@ var (
 )
 
 func TestMain(m *testing.M) {
+	flag.Parse()
+	if testing.Short() {
+		// Unit tests run offline; integration tests skip themselves in short mode.
+		os.Exit(m.Run())
+	}
+
 	testEmail = os.Getenv("INTERNXT_TEST_EMAIL")
 	testPassword = os.Getenv("INTERNXT_TEST_PASSWORD")
 

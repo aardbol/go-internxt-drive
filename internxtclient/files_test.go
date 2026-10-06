@@ -99,7 +99,8 @@ func moveFile(t *testing.T, uuid string, targetFolderUUID string) *internxtclien
 }
 
 func updateFileMefa(t *testing.T, uuid string, newName string) *internxtclient.File {
-	newValues := internxtclient.File{PlainName: newName, Type: newName + "ext"}
+	newType := newName + "ext"
+	newValues := internxtclient.UpdateFileMetaRequest{PlainName: &newName, Type: &newType}
 	updatedFile, err := c.Files.UpdateFileMeta(uuid, &newValues)
 	if err != nil {
 		t.Fatalf("can't update file meta: %v", err)
