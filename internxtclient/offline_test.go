@@ -457,10 +457,12 @@ func TestOfflineAPIErrorHelpers(t *testing.T) {
 
 func TestOfflineGetUserCredentialsUnmarshal(t *testing.T) {
 	// Wire shape observed from the live API (matches SDK UserResponseDto):
-	// mnemonic is a plain string; no password/hKey JWK objects are sent.
+	// mnemonic is a plain hex string; root_folder_id (legacy number) and
+	// rootFolderId (root folder UUID) are distinct fields.
 	const mnemonicHex = "53616c7465645f5fa54605e4910c043b"
-	payload := `{"user":{"id":1,"userId":"$2a$08$abcdefghijklmnopqrstuv","email":"user@example.com",` +
-		`"mnemonic":"` + mnemonicHex + `","uuid":"user-uuid"},` +
+	payload := `{"user":{"email":"user@example.com","userId":"$2a$08$abcdefghijklmnopqrstuv",` +
+		`"mnemonic":"` + mnemonicHex + `","root_folder_id":42,` +
+		`"rootFolderId":"01a11389-c83d-7578-aed5-422bd298f99f","uuid":"user-uuid"},` +
 		`"oldToken":"old","newToken":"new"}`
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -476,6 +478,12 @@ func TestOfflineGetUserCredentialsUnmarshal(t *testing.T) {
 	}
 	if creds.User.Mnemonic != mnemonicHex {
 		t.Fatalf("Mnemonic = %q, want %q", creds.User.Mnemonic, mnemonicHex)
+	}
+	if creds.User.RootFolderID != 42 {
+		t.Fatalf("RootFolderID = %d, want 42", creds.User.RootFolderID)
+	}
+	if creds.User.RootFolderUUID != "01a11389-c83d-7578-aed5-422bd298f99f" {
+		t.Fatalf("RootFolderUUID = %q", creds.User.RootFolderUUID)
 	}
 	if creds.NewToken != "new" {
 		t.Fatalf("NewToken = %q, want %q", creds.NewToken, "new")

@@ -38,6 +38,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **BREAKING:** `GetUserCredentialsResponse.User.Mnemonic` is now a plain `string`
   (matching the API and the SDK's `UserResponseDto`); the former JWK-style
   `{type, data}` object shape no longer exists on the live API.
+- **BREAKING:** `GetUserCredentialsResponse.User.RootFolderID` (was mapped to the
+  string-typed `rootFolderId` JSON field) is now split to match the API and SDK:
+  `RootFolderID int` (`root_folder_id`, legacy numeric id) plus a new
+  `RootFolderUUID string` (`rootFolderId`, the root folder UUID).
 - Uploads reject a non-positive size up front (`ErrInvalidUploadSize`).
 - `Transfer` no longer applies a hardcoded 15-minute timeout; use the context.
 

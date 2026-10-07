@@ -64,9 +64,12 @@ type GetUserCredentialsResponse struct {
 		} `json:"password"`
 		// Mnemonic is a plain string on the current API (SDK UserResponseDto).
 		// It used to be a JWK-style {type, data} object; that shape is gone.
-		Mnemonic     string `json:"mnemonic"`
-		RootFolderID int    `json:"rootFolderId"`
-		HKey         struct {
+		Mnemonic string `json:"mnemonic"`
+		// SDK UserResponseDto: root_folder_id (legacy int) and rootFolderId
+		// (root folder UUID) are two distinct fields.
+		RootFolderID   int    `json:"root_folder_id"`
+		RootFolderUUID string `json:"rootFolderId"`
+		HKey           struct {
 			Type string `json:"type"`
 			Data []byte `json:"data"`
 		} `json:"hKey"`
