@@ -1,6 +1,7 @@
 package internxtclient
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net"
@@ -9,6 +10,21 @@ import (
 	"strings"
 	"time"
 )
+
+// sleepCtx waits for d, returning early with ctx.Err() if ctx is canceled.
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
 
 const maxRequestRetries = 4
 

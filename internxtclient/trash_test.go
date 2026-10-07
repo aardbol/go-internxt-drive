@@ -97,7 +97,7 @@ func ensureFileIsDeleted(t *testing.T, fileUUID string) {
 }
 
 func ensureFolderIsDeleted(t *testing.T, folderUUID string) {
-	deletedTrashFolder, err := c.Folders.GetFolderMeta(folderUUID)
+	deletedTrashFolder, err := c.Folders.GetFolderMeta(testCtx, folderUUID)
 	if err != nil {
 		if !strings.Contains(err.Error(), "404") {
 			t.Fatalf("DeleteTrashFolder failed: %v", err)
@@ -109,35 +109,35 @@ func ensureFolderIsDeleted(t *testing.T, folderUUID string) {
 }
 
 func deleteSpecidiedTrashItems(t *testing.T, trashRefs []client.TrashRef) {
-	err := c.Trash.DeleteSpecifiedTrashItems(trashRefs)
+	err := c.Trash.DeleteSpecifiedTrashItems(testCtx, trashRefs)
 	if err != nil {
 		t.Fatalf("DeleteSpecidiedTrashItems failed: %v", err)
 	}
 }
 
 func deleteTrashFile(t *testing.T, fileID string) {
-	err := c.Trash.DeleteTrashFile(fileID)
+	err := c.Trash.DeleteTrashFile(testCtx, fileID)
 	if err != nil {
 		t.Fatalf("DeleteTrashFile failed: %v", err)
 	}
 }
 
 func deleteTrashFolder(t *testing.T, folderID int64) {
-	err := c.Trash.DeleteTrashFolder(folderID)
+	err := c.Trash.DeleteTrashFolder(testCtx, folderID)
 	if err != nil {
 		t.Fatalf("DeleteTrashFolder failed: %v", err)
 	}
 }
 
 func deleteSpecifiedTrashItems(t *testing.T, trashRefs []client.TrashRef) {
-	err := c.Trash.DeleteSpecifiedTrashItems(trashRefs)
+	err := c.Trash.DeleteSpecifiedTrashItems(testCtx, trashRefs)
 	if err != nil {
 		t.Fatalf("DeleteSpecifiedTrashItems failed: %v", err)
 	}
 }
 
 func addToTrash(t *testing.T, trashRefs []client.TrashRef) {
-	err := c.Trash.AddToTrash(trashRefs)
+	err := c.Trash.AddToTrash(testCtx, trashRefs)
 	if err != nil {
 		t.Fatalf("AddToTrash failed: %v", err)
 	}

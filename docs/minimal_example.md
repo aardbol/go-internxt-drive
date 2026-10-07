@@ -8,6 +8,7 @@ Run with `INTERNXT_TEST_EMAIL=<your email> INTERNXT_TEST_PASSWORD=<your password
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -23,13 +24,15 @@ func main() {
 		return
 	}
 
-	c, err := internxtclient.NewWithCredentials(email, password)
+	ctx := context.Background()
+
+	c, err := internxtclient.NewWithCredentials(ctx, email, password)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
 
-	folders, err := c.Folders.Tree(c.UserData.AccessData.User.RootFolderUUID)
+	folders, err := c.Folders.Tree(ctx, c.UserData.AccessData.User.RootFolderUUID)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)

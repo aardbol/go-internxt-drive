@@ -40,11 +40,13 @@ jobs:
       - name: build
         run: go build ./...
 
-      # Integration tests hit the real Internxt service and require
-      # credentials; skipped on fork PRs where secrets are unavailable.
-      - name: test
+      - name: unit tests
+        run: go test -race -short ./...
+
+      # Integration tests hit the real Internxt service and require credentials.
+      - name: integration tests
         id: test
-        if: env.INTERNXT_TEST_EMAIL != ''
+        if: matrix.go.label == 'go.mod' && env.INTERNXT_TEST_EMAIL != ''
         env:
           INTERNXT_TEST_EMAIL: ${{ secrets.INTERNXT_TEST_EMAIL }}
           INTERNXT_TEST_PASSWORD: ${{ secrets.INTERNXT_TEST_PASSWORD }}

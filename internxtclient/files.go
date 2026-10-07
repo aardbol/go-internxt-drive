@@ -1,6 +1,7 @@
 package internxtclient
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"path"
@@ -46,11 +47,11 @@ type File struct {
 const filesPath = "/files"
 
 // GetFileMeta gets file with metadata by UUID
-func (f *FilesService) GetFileMeta(fileUUID string) (*File, error) {
+func (f *FilesService) GetFileMeta(ctx context.Context, fileUUID string) (*File, error) {
 	endpoint := path.Join(filesPath, fileUUID, "meta")
 
 	var file File
-	if resp, err := f.client.Get(APITypeDrive, endpoint, &file, nil); err != nil {
+	if resp, err := f.client.Get(ctx, APITypeDrive, endpoint, &file, nil); err != nil {
 		return nil, f.client.GetError(endpoint, resp, err)
 	}
 
@@ -58,37 +59,56 @@ func (f *FilesService) GetFileMeta(fileUUID string) (*File, error) {
 }
 
 // DeleteFile deletes a file by UUID
-func (f *FilesService) DeleteFile(uuid string) error {
+func (f *FilesService) DeleteFile(ctx context.Context, uuid string) error {
 	endpoint := path.Join(filesPath, uuid)
 
-	if resp, err := f.client.Delete(APITypeDrive, endpoint, nil, nil, nil); err != nil {
+	if resp, err := f.client.Delete(ctx, APITypeDrive, endpoint, nil, nil, nil); err != nil {
 		return f.client.GetError(endpoint, resp, err)
 	}
 
 	return nil
 }
 
+// UpdateFileMetaRequest is the payload for PUT /files/{uuid}/meta.
+// It mirrors the API's UpdateFileMetaDto so only the provided fields are sent.
+type UpdateFileMetaRequest struct {
+	PlainName *string `json:"plainName,omitempty"`
+	Type      *string `json:"type,omitempty"`
+}
+
 // UpdateFileMeta updates the metadata of a file with the given UUID.
-func (f *FilesService) UpdateFileMeta(fileUUID string, updated *File) (*File, error) {
+func (f *FilesService) UpdateFileMeta(ctx context.Context, fileUUID string, updated *UpdateFileMetaRequest) (*File, error) {
 	endpoint := path.Join(filesPath, fileUUID, "meta")
 	var updatedFile File
 
-	if resp, err := f.client.Put(APITypeDrive, endpoint, &updated, &updatedFile, nil); err != nil {
+	if resp, err := f.client.Put(ctx, APITypeDrive, endpoint, updated, &updatedFile, nil); err != nil {
 		return nil, f.client.GetError(endpoint, resp, err)
 	}
 
 	return &updatedFile, nil
 }
 
+// MoveFileRequest is the payload for PATCH /files/{uuid}.
+// Name and Type are optional: set them to rename the file or change its extension while moving;
+// pass a pointer to an empty string to clear them, and nil to keep the current values.
+type MoveFileRequest struct {
+	DestinationFolder string  `json:"destinationFolder"`
+	Name              *string `json:"name,omitempty"`
+	Type              *string `json:"type,omitempty"`
+}
+
 // MoveFile moves the file with the given UUID to the destination folder.
-func (f *FilesService) MoveFile(fileUUID, destinationFolderUUID string) (*File, error) {
+func (f *FilesService) MoveFile(ctx context.Context, fileUUID, destinationFolderUUID string) (*File, error) {
+	return f.MoveFileWithRequest(ctx, fileUUID, &MoveFileRequest{DestinationFolder: destinationFolderUUID})
+}
+
+// MoveFileWithRequest moves the file with the given UUID and applies the
+// optional rename fields of the request in the same operation.
+func (f *FilesService) MoveFileWithRequest(ctx context.Context, fileUUID string, req *MoveFileRequest) (*File, error) {
 	endpoint := path.Join(filesPath, fileUUID)
 	var movedFile File
-	body := map[string]string{
-		"destinationFolder": destinationFolderUUID,
-	}
 
-	if resp, err := f.client.Patch(APITypeDrive, endpoint, &body, &movedFile, nil); err != nil {
+	if resp, err := f.client.Patch(ctx, APITypeDrive, endpoint, req, &movedFile, nil); err != nil {
 		return nil, f.client.GetError(endpoint, resp, err)
 	}
 
@@ -96,12 +116,12 @@ func (f *FilesService) MoveFile(fileUUID, destinationFolderUUID string) (*File, 
 }
 
 // GetRecentFiles retrieves a list of recent files with the given limit.
-func (f *FilesService) GetRecentFiles(limit int) ([]File, error) {
+func (f *FilesService) GetRecentFiles(ctx context.Context, limit int) ([]File, error) {
 	endpoint := path.Join(filesPath, "recents")
 
 	var files []File
 
-	if resp, err := f.client.doRequestWithQuery(APITypeDrive, http.MethodGet, endpoint, map[string]string{"limit": strconv.Itoa(limit)}, nil, &files, nil); err != nil {
+	if resp, err := f.client.doRequestWithQuery(ctx, APITypeDrive, http.MethodGet, endpoint, map[string]string{"limit": strconv.Itoa(limit)}, nil, &files, nil); err != nil {
 		return nil, f.client.GetError(endpoint, resp, err)
 	}
 

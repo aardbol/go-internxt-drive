@@ -1,6 +1,7 @@
 package internxtclient
 
 import (
+	"context"
 	"encoding/json"
 	"path"
 )
@@ -58,12 +59,12 @@ type WorkspacesResponse struct {
 }
 
 // GetWorkspaces calls GET {DriveAPIURL}/workspaces and returns the parsed response
-func (w *WorkspacesService) GetWorkspaces() (*WorkspacesResponse, error) {
+func (w *WorkspacesService) GetWorkspaces(ctx context.Context) (*WorkspacesResponse, error) {
 	endpoint := path.Join(workspacesPath)
 
 	var workspacesResponse WorkspacesResponse
 
-	if resp, err := w.client.Get(APITypeDrive, endpoint, &workspacesResponse, nil); err != nil {
+	if resp, err := w.client.Get(ctx, APITypeDrive, endpoint, &workspacesResponse, nil); err != nil {
 		return nil, w.client.GetError(endpoint, resp, err)
 	}
 	return &workspacesResponse, nil

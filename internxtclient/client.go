@@ -2,6 +2,7 @@ package internxtclient
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -45,7 +46,10 @@ func (c *Client) URL(api APIType) string {
 type Client struct {
 	Config     Config
 	HTTPClient *http.Client
-	UserData   *UserData
+	// StreamClient is used for long-lived request/response bodies; it has no global timeout
+	// and relies on the caller's context for cancellation.
+	StreamClient *http.Client
+	UserData     *UserData
 
 	Folders    *FoldersService
 	Files      *FilesService
@@ -130,14 +134,15 @@ func NewWithDefaults() *Client {
 	c.HTTPClient = &http.Client{
 		Timeout: time.Second * 30,
 	}
+	c.StreamClient = &http.Client{}
 
 	return &c
 }
 
-func NewWithCredentials(email, password string) (*Client, error) {
+func NewWithCredentials(ctx context.Context, email, password string) (*Client, error) {
 	c := NewWithDefaults()
 
-	LoginResponse, err := c.Auth.Login(email)
+	LoginResponse, err := c.Auth.Login(ctx, email)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +150,7 @@ func NewWithCredentials(email, password string) (*Client, error) {
 	c.UserData.LoginData = LoginResponse
 
 	c.UserData.AccessData.User = &User{Email: email}
-	AccessResponse, err := c.Auth.AccessLogin(LoginResponse, password)
+	AccessResponse, err := c.Auth.AccessLogin(ctx, LoginResponse, password)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +186,7 @@ func (c *Client) hasUserDataLoginData() bool {
 }
 
 // doRequest handles sending the request and decoding the response into result.
-func (c *Client) doRequest(apiType APIType, method, path string, body any, result any, headers *http.Header) (*Response, error) {
+func (c *Client) doRequest(ctx context.Context, apiType APIType, method, path string, body any, result any, headers *http.Header) (*Response, error) {
 	finalURL, err := url.JoinPath(c.URL(apiType), path)
 	if err != nil {
 		return nil, fmt.Errorf("invalid URL: %w", err)
@@ -203,6 +208,9 @@ func (c *Client) doRequest(apiType APIType, method, path string, body any, resul
 	var lastResponse *Response
 	var lastErr error
 	for attempt := 0; attempt <= maxRequestRetries; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return lastResponse, err
+		}
 		if attempt > 0 {
 			var waitBody []byte
 			var waitHeaders http.Header
@@ -210,10 +218,12 @@ func (c *Client) doRequest(apiType APIType, method, path string, body any, resul
 				waitBody = lastResponse.Body
 				waitHeaders = lastResponse.Headers
 			}
-			time.Sleep(retryWait(attempt, waitBody, waitHeaders))
+			if err := sleepCtx(ctx, retryWait(attempt, waitBody, waitHeaders)); err != nil {
+				return lastResponse, err
+			}
 		}
 
-		response, err := c.doRequestOnce(method, finalURLUnescaped, bodyBytes, headers)
+		response, err := c.doRequestOnce(ctx, method, finalURLUnescaped, bodyBytes, headers)
 		if err == nil {
 			if result != nil {
 				if err := json.Unmarshal(response.Body, result); err != nil {
@@ -233,13 +243,13 @@ func (c *Client) doRequest(apiType APIType, method, path string, body any, resul
 	return lastResponse, lastErr
 }
 
-func (c *Client) doRequestOnce(method, finalURL string, body []byte, headers *http.Header) (*Response, error) {
+func (c *Client) doRequestOnce(ctx context.Context, method, finalURL string, body []byte, headers *http.Header) (*Response, error) {
 	var buf io.Reader
 	if len(body) > 0 {
 		buf = bytes.NewReader(body)
 	}
 
-	req, err := http.NewRequest(method, finalURL, buf)
+	req, err := http.NewRequestWithContext(ctx, method, finalURL, buf)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -279,23 +289,28 @@ func (c *Client) doRequestOnce(method, finalURL string, body []byte, headers *ht
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return response, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(responseBody))
+		return response, &APIError{StatusCode: resp.StatusCode, Method: method, Endpoint: finalURL, Body: responseBody}
 	}
 
 	return response, nil
 }
 
-func (c *Client) doRawGET(req *http.Request) (*http.Response, error) {
+func (c *Client) doRawGET(ctx context.Context, req *http.Request) (*http.Response, error) {
 	var lastBody []byte
 	var lastHeaders http.Header
 	var lastErr error
 
 	for attempt := 0; attempt <= maxRequestRetries; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if attempt > 0 {
-			time.Sleep(retryWait(attempt, lastBody, lastHeaders))
+			if err := sleepCtx(ctx, retryWait(attempt, lastBody, lastHeaders)); err != nil {
+				return nil, err
+			}
 		}
 
-		resp, err := c.HTTPClient.Do(req)
+		resp, err := c.StreamClient.Do(req)
 		if err != nil {
 			lastErr = err
 			if isRetryableNetworkError(err) && attempt < maxRequestRetries {
@@ -311,7 +326,7 @@ func (c *Client) doRawGET(req *http.Request) (*http.Response, error) {
 		lastBody, _ = io.ReadAll(resp.Body)
 		lastHeaders = resp.Header.Clone()
 		resp.Body.Close()
-		lastErr = fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(lastBody))
+		lastErr = &APIError{StatusCode: resp.StatusCode, Method: req.Method, Endpoint: req.URL.String(), Body: lastBody}
 		if shouldRetryResponse(resp.StatusCode, lastBody) && attempt < maxRequestRetries {
 			continue
 		}
@@ -321,7 +336,7 @@ func (c *Client) doRawGET(req *http.Request) (*http.Response, error) {
 	return nil, lastErr
 }
 
-func (c *Client) doRequestWithQuery(apiType APIType, method, endpoint string, query map[string]string, body, out any, headers *http.Header) (*Response, error) {
+func (c *Client) doRequestWithQuery(ctx context.Context, apiType APIType, method, endpoint string, query map[string]string, body, out any, headers *http.Header) (*Response, error) {
 	u, err := url.Parse(endpoint)
 	if err != nil {
 		return nil, err
@@ -333,10 +348,10 @@ func (c *Client) doRequestWithQuery(apiType APIType, method, endpoint string, qu
 	}
 	u.RawQuery = q.Encode()
 
-	return c.doRequest(apiType, method, u.String(), body, out, headers)
+	return c.doRequest(ctx, apiType, method, u.String(), body, out, headers)
 }
 
-func (c *Client) doRequestWithStruct(apiType APIType, method, endpoint string, opts any, body, out any, headers *http.Header) (*Response, error) {
+func (c *Client) doRequestWithStruct(ctx context.Context, apiType APIType, method, endpoint string, opts any, body, out any, headers *http.Header) (*Response, error) {
 	u, err := url.Parse(endpoint)
 	if err != nil {
 		return nil, err
@@ -349,32 +364,32 @@ func (c *Client) doRequestWithStruct(apiType APIType, method, endpoint string, o
 		}
 		u.RawQuery = v.Encode()
 	}
-	return c.doRequest(apiType, method, u.String(), body, out, headers)
+	return c.doRequest(ctx, apiType, method, u.String(), body, out, headers)
 }
 
 // Get sends an HTTP GET request with optional headers to the given APIType and path, unmarshaling the response into result.
-func (c *Client) Get(apiType APIType, path string, result any, headers *http.Header) (*Response, error) {
-	return c.doRequest(apiType, http.MethodGet, path, nil, result, headers)
+func (c *Client) Get(ctx context.Context, apiType APIType, path string, result any, headers *http.Header) (*Response, error) {
+	return c.doRequest(ctx, apiType, http.MethodGet, path, nil, result, headers)
 }
 
-// Get sends an HTTP PATCH request with optional headers to the given APIType and path, unmarshaling the response into result.
-func (c *Client) Patch(apiType APIType, path string, body any, result any, headers *http.Header) (*Response, error) {
-	return c.doRequest(apiType, http.MethodPatch, path, body, result, headers)
+// Patch sends an HTTP PATCH request with optional headers to the given APIType and path, unmarshaling the response into result.
+func (c *Client) Patch(ctx context.Context, apiType APIType, path string, body any, result any, headers *http.Header) (*Response, error) {
+	return c.doRequest(ctx, apiType, http.MethodPatch, path, body, result, headers)
 }
 
-// Get sends an HTTP POST request with optional headers to the given APIType and path, unmarshaling the response into result.
-func (c *Client) Post(apiType APIType, path string, body any, result any, headers *http.Header) (*Response, error) {
-	return c.doRequest(apiType, http.MethodPost, path, body, result, headers)
+// Post sends an HTTP POST request with optional headers to the given APIType and path, unmarshaling the response into result.
+func (c *Client) Post(ctx context.Context, apiType APIType, path string, body any, result any, headers *http.Header) (*Response, error) {
+	return c.doRequest(ctx, apiType, http.MethodPost, path, body, result, headers)
 }
 
-// Get sends an HTTP PUT request with optional headers to the given APIType and path, unmarshaling the response into result.
-func (c *Client) Put(apiType APIType, path string, body any, result any, headers *http.Header) (*Response, error) {
-	return c.doRequest(apiType, http.MethodPut, path, body, result, headers)
+// Put sends an HTTP PUT request with optional headers to the given APIType and path, unmarshaling the response into result.
+func (c *Client) Put(ctx context.Context, apiType APIType, path string, body any, result any, headers *http.Header) (*Response, error) {
+	return c.doRequest(ctx, apiType, http.MethodPut, path, body, result, headers)
 }
 
-// Get sends an HTTP DELETE request with optional headers to the given APIType and path, unmarshaling the response into result.
-func (c *Client) Delete(apiType APIType, path string, body, result any, headers *http.Header) (*Response, error) {
-	return c.doRequest(apiType, http.MethodDelete, path, body, result, headers)
+// Delete sends an HTTP DELETE request with optional headers to the given APIType and path, unmarshaling the response into result.
+func (c *Client) Delete(ctx context.Context, apiType APIType, path string, body, result any, headers *http.Header) (*Response, error) {
+	return c.doRequest(ctx, apiType, http.MethodDelete, path, body, result, headers)
 }
 
 func (c *Client) GetError(endpoint string, resp *Response, err error) error {

@@ -1,6 +1,7 @@
 package internxtclient
 
 import (
+	"context"
 	"net/http"
 	"path"
 	"strings"
@@ -90,7 +91,7 @@ func (o *ListOptions) withDefaults() *ListOptions {
 
 // CreateFolder calls {DriveAPIURL}/folders with authorization.
 // It auto‑fills CreationTime/ModificationTime if empty, checks status, and returns the newly created Folder.
-func (f *FoldersService) CreateFolder(reqBody CreateFolderRequest) (*Folder, error) {
+func (f *FoldersService) CreateFolder(ctx context.Context, reqBody CreateFolderRequest) (*Folder, error) {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	if reqBody.CreationTime == "" {
 		reqBody.CreationTime = now
@@ -102,7 +103,7 @@ func (f *FoldersService) CreateFolder(reqBody CreateFolderRequest) (*Folder, err
 	endpoint := foldersPath
 	var folder Folder
 
-	if resp, err := f.client.Post(APITypeDrive, endpoint, &reqBody, &folder, nil); err != nil {
+	if resp, err := f.client.Post(ctx, APITypeDrive, endpoint, &reqBody, &folder, nil); err != nil {
 		return nil, f.client.GetError(endpoint, resp, err)
 	}
 
@@ -110,11 +111,11 @@ func (f *FoldersService) CreateFolder(reqBody CreateFolderRequest) (*Folder, err
 }
 
 // DeleteFolders deletes a folder by UUID
-func (f *FoldersService) DeleteFolder(uuid string) error {
+func (f *FoldersService) DeleteFolder(ctx context.Context, uuid string) error {
 	endpoint := path.Join(foldersPath, uuid)
 
 	//Server returns 204 on success
-	resp, err := f.client.Delete(APITypeDrive, endpoint, nil, nil, nil)
+	resp, err := f.client.Delete(ctx, APITypeDrive, endpoint, nil, nil, nil)
 	if err != nil {
 		return f.client.GetError(endpoint, resp, err)
 	}
@@ -124,13 +125,13 @@ func (f *FoldersService) DeleteFolder(uuid string) error {
 
 // GetFolderSize retrieves the total size (in bytes) of a folder by UUID.
 // Returns the size as int64, or an error.
-func (f *FoldersService) GetFolderSize(uuid string) (int64, error) {
+func (f *FoldersService) GetFolderSize(ctx context.Context, uuid string) (int64, error) {
 	endpoint := path.Join(foldersPath, uuid, "size")
 	var result struct {
 		Size int64 `json:"size"`
 	}
 
-	if resp, err := f.client.Get(APITypeDrive, endpoint, &result, nil); err != nil {
+	if resp, err := f.client.Get(ctx, APITypeDrive, endpoint, &result, nil); err != nil {
 		return -1, f.client.GetError(endpoint, resp, err)
 	}
 
@@ -139,14 +140,14 @@ func (f *FoldersService) GetFolderSize(uuid string) (int64, error) {
 
 // ListFolders lists child folders under the given parent UUID.
 // Returns a slice of folders or error
-func (f *FoldersService) ListFolders(parentUUID string, opts *ListOptions) ([]Folder, error) {
+func (f *FoldersService) ListFolders(ctx context.Context, parentUUID string, opts *ListOptions) ([]Folder, error) {
 	opts = opts.withDefaults()
 	endpoint := path.Join(foldersPath, "content", parentUUID, "folders")
 	var wrapper struct {
 		Folders []Folder `json:"folders"`
 	}
 
-	if resp, err := f.client.doRequestWithStruct(APITypeDrive, http.MethodGet, endpoint, opts, nil, &wrapper, nil); err != nil {
+	if resp, err := f.client.doRequestWithStruct(ctx, APITypeDrive, http.MethodGet, endpoint, opts, nil, &wrapper, nil); err != nil {
 		return nil, f.client.GetError(endpoint, resp, err)
 	}
 
@@ -162,14 +163,14 @@ func (f *FoldersService) ListFolders(parentUUID string, opts *ListOptions) ([]Fo
 
 // ListFiles lists child files under the given parent UUID.
 // Returns a slice of files or error otherwise
-func (f *FoldersService) ListFiles(parentUUID string, opts *ListOptions) ([]File, error) {
+func (f *FoldersService) ListFiles(ctx context.Context, parentUUID string, opts *ListOptions) ([]File, error) {
 	opts = opts.withDefaults()
 	endpoint := path.Join(foldersPath, "content", parentUUID, "files")
 	var wrapper struct {
 		Files []File `json:"files"`
 	}
 
-	if resp, err := f.client.doRequestWithStruct(APITypeDrive, http.MethodGet, endpoint, opts, nil, &wrapper, nil); err != nil {
+	if resp, err := f.client.doRequestWithStruct(ctx, APITypeDrive, http.MethodGet, endpoint, opts, nil, &wrapper, nil); err != nil {
 		return nil, f.client.GetError(endpoint, resp, err)
 	}
 
@@ -184,13 +185,13 @@ func (f *FoldersService) ListFiles(parentUUID string, opts *ListOptions) ([]File
 }
 
 // This function will get all of the files in a folder, getting 50 at a time until completed
-func (f *FoldersService) ListAllFiles(parentUUID string) ([]File, error) {
+func (f *FoldersService) ListAllFiles(ctx context.Context, parentUUID string) ([]File, error) {
 	var outFiles []File
 	offset := 0
 	loops := 0
 	maxLoops := 10000 //Find sane number...
 	for {
-		files, err := f.ListFiles(parentUUID, &ListOptions{Offset: offset})
+		files, err := f.ListFiles(ctx, parentUUID, &ListOptions{Offset: offset})
 		if err != nil {
 			return nil, err
 		}
@@ -211,13 +212,13 @@ func (f *FoldersService) ListAllFiles(parentUUID string) ([]File, error) {
 }
 
 // This function will get all of the folders in a folder, getting 50 at a time until completed
-func (f *FoldersService) ListAllFolders(parentUUID string) ([]Folder, error) {
+func (f *FoldersService) ListAllFolders(ctx context.Context, parentUUID string) ([]Folder, error) {
 	var outFolders []Folder
 	offset := 0
 	loops := 0
 	maxLoops := 10000 //Find sane number...
 	for {
-		files, err := f.ListFolders(parentUUID, &ListOptions{Offset: offset})
+		files, err := f.ListFolders(ctx, parentUUID, &ListOptions{Offset: offset})
 		if err != nil {
 			return nil, err
 		}
@@ -238,7 +239,7 @@ func (f *FoldersService) ListAllFolders(parentUUID string) ([]Folder, error) {
 }
 
 // RenameFolder updates the plainName of an existing folder.
-func (f *FoldersService) RenameFolder(uuid, newName string) error {
+func (f *FoldersService) RenameFolder(ctx context.Context, uuid, newName string) error {
 	endpoint := path.Join(foldersPath, uuid, "meta")
 
 	payload := struct {
@@ -247,7 +248,7 @@ func (f *FoldersService) RenameFolder(uuid, newName string) error {
 		PlainName: newName,
 	}
 
-	if resp, err := f.client.Put(APITypeDrive, endpoint, payload, nil, nil); err != nil {
+	if resp, err := f.client.Put(ctx, APITypeDrive, endpoint, payload, nil, nil); err != nil {
 		return f.client.GetError(endpoint, resp, err)
 	}
 
@@ -255,7 +256,7 @@ func (f *FoldersService) RenameFolder(uuid, newName string) error {
 }
 
 // MoveFolder moves a folder into a new parent.
-func (f *FoldersService) MoveFolder(uuid, destUUID string) error {
+func (f *FoldersService) MoveFolder(ctx context.Context, uuid, destUUID string) error {
 	endpoint := path.Join(foldersPath, uuid)
 
 	payload := struct {
@@ -264,7 +265,7 @@ func (f *FoldersService) MoveFolder(uuid, destUUID string) error {
 		DestinationFolder: destUUID,
 	}
 
-	if resp, err := f.client.Patch(APITypeDrive, endpoint, payload, nil, nil); err != nil {
+	if resp, err := f.client.Patch(ctx, APITypeDrive, endpoint, payload, nil, nil); err != nil {
 		return f.client.GetError(endpoint, resp, err)
 	}
 
@@ -272,12 +273,12 @@ func (f *FoldersService) MoveFolder(uuid, destUUID string) error {
 }
 
 // Gets the metadata for a folder by its UUID
-func (f *FoldersService) GetFolderMeta(folderUUID string) (*Folder, error) {
+func (f *FoldersService) GetFolderMeta(ctx context.Context, folderUUID string) (*Folder, error) {
 	endpoint := path.Join(foldersPath, folderUUID, "meta")
 
 	var folder Folder
 
-	if resp, err := f.client.Get(APITypeDrive, endpoint, &folder, nil); err != nil {
+	if resp, err := f.client.Get(ctx, APITypeDrive, endpoint, &folder, nil); err != nil {
 		return nil, f.client.GetError(endpoint, resp, err)
 	}
 
@@ -285,14 +286,14 @@ func (f *FoldersService) GetFolderMeta(folderUUID string) (*Folder, error) {
 }
 
 // Tree lists child folders and files recursively under the given parent UUID.
-func (f *FoldersService) Tree(parentUUID string) (*Folder, error) {
+func (f *FoldersService) Tree(ctx context.Context, parentUUID string) (*Folder, error) {
 	endpoint := path.Join(foldersPath, parentUUID, "tree")
 
 	var wrapper struct {
 		Folder Folder `json:"tree"`
 	}
 
-	if resp, err := f.client.Get(APITypeDrive, endpoint, &wrapper, nil); err != nil {
+	if resp, err := f.client.Get(ctx, APITypeDrive, endpoint, &wrapper, nil); err != nil {
 		return nil, f.client.GetError(endpoint, resp, err)
 	}
 

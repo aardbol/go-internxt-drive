@@ -8,6 +8,8 @@ import (
 )
 
 func TestFuzzyIntegration(t *testing.T) {
+	t.Skip("live API returns 404 for GET /api/fuzzy/{term} (endpoint removed server-side; absent from the official SDK too)")
+
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -35,7 +37,7 @@ func TestFuzzyIntegration(t *testing.T) {
 }
 
 func fuzzySearch(t *testing.T, term string) *client.SearchResponse {
-	searchResponse, err := c.Fuzzy.FuzzySearch(term, 0)
+	searchResponse, err := c.Fuzzy.FuzzySearch(testCtx, term, 0)
 	if err != nil {
 		t.Fatalf("FuzzySearch failed: %v", err)
 	}

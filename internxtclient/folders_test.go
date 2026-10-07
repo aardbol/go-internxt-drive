@@ -67,9 +67,8 @@ func TestFoldersIntegration(t *testing.T) {
 		if folder.Children == nil {
 			t.Fatalf("folder.Children is nil")
 		}
-		if folder.Files == nil {
-			t.Fatalf("folder.Files is nil")
-		}
+		// The API returns null (not []) for folders without direct files,
+		// so only assert emptiness, not non-nil-ness.
 		if len(folder.Files) != 0 {
 			t.Fatalf("folder.Files should be 0, but is %d", len(folder.Files))
 		}
@@ -83,16 +82,16 @@ func TestFoldersIntegration(t *testing.T) {
 		if folder.Children[0].Children[0].PlainName != foldersSubfolder2 {
 			t.Fatalf("folder.Children[0].Children[0]'s name should be '%s' but is %s", foldersSubfolder2, folder.Children[0].Children[0].PlainName)
 		}
-		if folder.Children[0].Files[0].PlainName != "1" {
-			t.Fatalf("folder.Children[0].Files[0]'s name should be '1' but is %s", folder.Children[0].Files[0].PlainName)
+		if len(folder.Children[0].Files) != 1 || folder.Children[0].Files[0].PlainName != "1" {
+			t.Fatalf("folder.Children[0] should contain exactly file '1', got %+v", folder.Children[0].Files)
 		}
-		if folder.Children[0].Children[0].Files[0].PlainName != "2" {
-			t.Fatalf("folder.Children[0].Children[0].Files[0]'s name should be '2' but is %s", folder.Children[0].Children[0].Files[0].PlainName)
+		if len(folder.Children[0].Children[0].Files) != 1 || folder.Children[0].Children[0].Files[0].PlainName != "2" {
+			t.Fatalf("folder.Children[0].Children[0] should contain exactly file '2', got %+v", folder.Children[0].Children[0].Files)
 		}
 	})
 
 	t.Run("ListFiles", func(t *testing.T) {
-		files, err := c.Folders.ListFiles(subFolder1UUID, &internxtclient.ListOptions{Limit: 1, Offset: 0})
+		files, err := c.Folders.ListFiles(testCtx, subFolder1UUID, &internxtclient.ListOptions{Limit: 1, Offset: 0})
 		if err != nil {
 			t.Fatalf("Couldn't ListFiles:  %v", err)
 		}
@@ -109,7 +108,7 @@ func TestFoldersIntegration(t *testing.T) {
 	})
 
 	t.Run("ListFolders", func(t *testing.T) {
-		folders, err := c.Folders.ListFolders(subFolder1UUID, &internxtclient.ListOptions{Limit: 1, Offset: 0})
+		folders, err := c.Folders.ListFolders(testCtx, subFolder1UUID, &internxtclient.ListOptions{Limit: 1, Offset: 0})
 		if err != nil {
 			t.Fatalf("Couldn't ListFolders:  %v", err)
 		}
@@ -132,7 +131,7 @@ func TestFoldersIntegration(t *testing.T) {
 }
 
 func createFolder(t *testing.T, folderName, parentFolderUUID string) *internxtclient.Folder {
-	folder, err := c.Folders.CreateFolder(internxtclient.CreateFolderRequest{PlainName: folderName, ParentFolderUUID: parentFolderUUID})
+	folder, err := c.Folders.CreateFolder(testCtx, internxtclient.CreateFolderRequest{PlainName: folderName, ParentFolderUUID: parentFolderUUID})
 	if err != nil {
 		t.Fatalf("Couldn't create folder:  %v", err)
 	}
@@ -147,7 +146,7 @@ func createFolder(t *testing.T, folderName, parentFolderUUID string) *internxtcl
 
 /*
 func createFolder(t *testing.T) (string, string) {
-	folder1, err := c.Folders.CreateFolder(internxtclient.CreateFolderRequest{PlainName: TESTSUBFOLDER1, ParentFolderUUID: testFolderUUID})
+	folder1, err := c.Folders.CreateFolder(testCtx, internxtclient.CreateFolderRequest{PlainName: TESTSUBFOLDER1, ParentFolderUUID: testFolderUUID})
 	if err != nil {
 		t.Fatalf("Couldn't create folder:  %v", err)
 	}
@@ -158,7 +157,7 @@ func createFolder(t *testing.T) (string, string) {
 		t.Fatalf("Couldn't create folder: folder has no UUID")
 	}
 
-	folder2, err := c.Folders.CreateFolder(internxtclient.CreateFolderRequest{PlainName: TESTSUBFOLDER2, ParentFolderUUID: testFolderUUID})
+	folder2, err := c.Folders.CreateFolder(testCtx, internxtclient.CreateFolderRequest{PlainName: TESTSUBFOLDER2, ParentFolderUUID: testFolderUUID})
 	if err != nil {
 		t.Fatalf("Couldn't create folder:  %v", err)
 	}
@@ -174,7 +173,7 @@ func createFolder(t *testing.T) (string, string) {
 */
 
 func getFolderSize(t *testing.T, shouldBe int64) {
-	s, err := c.Folders.GetFolderSize(testFolderUUID)
+	s, err := c.Folders.GetFolderSize(testCtx, testFolderUUID)
 	if err != nil {
 		t.Fatalf("Couldn't get folder size: %v", err)
 	}
@@ -185,7 +184,7 @@ func getFolderSize(t *testing.T, shouldBe int64) {
 
 func renameFolder(t *testing.T, folderUUID string) {
 	newName := "renamed"
-	err := c.Folders.RenameFolder(folderUUID, newName)
+	err := c.Folders.RenameFolder(testCtx, folderUUID, newName)
 	if err != nil {
 		t.Fatalf("Couldn't rename folder: %v", err)
 	}
@@ -200,7 +199,7 @@ func renameFolder(t *testing.T, folderUUID string) {
 }
 
 func getFolderMeta(t *testing.T, folderUUID string) *internxtclient.Folder {
-	folder, err := c.Folders.GetFolderMeta(folderUUID)
+	folder, err := c.Folders.GetFolderMeta(testCtx, folderUUID)
 	if err != nil {
 		t.Fatalf("Couldn't get folder meta: %v", err)
 	}
@@ -215,7 +214,7 @@ func getFolderMeta(t *testing.T, folderUUID string) *internxtclient.Folder {
 }
 
 func moveFolder(t *testing.T, folderUUID, destUUID string) {
-	err := c.Folders.MoveFolder(folderUUID, destUUID)
+	err := c.Folders.MoveFolder(testCtx, folderUUID, destUUID)
 	if err != nil {
 		t.Fatalf("Couldn't move folder: %v", err)
 	}
@@ -232,7 +231,7 @@ func moveFolder(t *testing.T, folderUUID, destUUID string) {
 }
 
 func tree(t *testing.T, folderUUID string) *internxtclient.Folder {
-	folder, err := c.Folders.Tree(folderUUID)
+	folder, err := c.Folders.Tree(testCtx, folderUUID)
 	if err != nil {
 		t.Fatalf("Couldn't delete folder:  %v", err)
 	}
@@ -247,7 +246,7 @@ func tree(t *testing.T, folderUUID string) *internxtclient.Folder {
 }
 
 func deleteFolder(t *testing.T, folderUUID string) {
-	err := c.Folders.DeleteFolder(folderUUID)
+	err := c.Folders.DeleteFolder(testCtx, folderUUID)
 	if err != nil {
 		t.Fatalf("Couldn't delete folder:  %v", err)
 	}
