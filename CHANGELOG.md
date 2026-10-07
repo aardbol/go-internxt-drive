@@ -35,6 +35,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **BREAKING:** downloads now fail loudly instead of returning bad data:
   legacy version-1 files are rejected (`ErrFileVersionOne`) and files with more than one
   shard are rejected (`ErrMultiShardUnsupported`); shards are sorted by index.
+- **BREAKING:** `GetUserCredentialsResponse.User.Mnemonic` is now a plain `string`
+  (matching the API and the SDK's `UserResponseDto`); the former JWK-style
+  `{type, data}` object shape no longer exists on the live API.
 - Uploads reject a non-positive size up front (`ErrInvalidUploadSize`).
 - `Transfer` no longer applies a hardcoded 15-minute timeout; use the context.
 
@@ -50,3 +53,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `UpdateFileMeta` no longer sends ~25 zero-value fields (e.g. `"size":""`,
   `"createdAt":"0001-01-01T00:00:00Z"`) that the server only ignored by luck.
 - `go test -short` no longer requires `INTERNXT_TEST_EMAIL`/`INTERNXT_TEST_PASSWORD`.
+- `UsersService.GetUserCredentials` failed with an unmarshal error against the live API
+  (`user.mnemonic` is returned as a hex string, not a `{type, data}` object).

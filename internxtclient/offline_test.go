@@ -455,6 +455,33 @@ func TestOfflineAPIErrorHelpers(t *testing.T) {
 	}
 }
 
+func TestOfflineGetUserCredentialsUnmarshal(t *testing.T) {
+	// Wire shape observed from the live API (matches SDK UserResponseDto):
+	// mnemonic is a plain string; no password/hKey JWK objects are sent.
+	const mnemonicHex = "53616c7465645f5fa54605e4910c043b"
+	payload := `{"user":{"id":1,"userId":"$2a$08$abcdefghijklmnopqrstuv","email":"user@example.com",` +
+		`"mnemonic":"` + mnemonicHex + `","uuid":"user-uuid"},` +
+		`"oldToken":"old","newToken":"new"}`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, payload)
+	}))
+	defer srv.Close()
+
+	c := newOfflineClient(t, srv.URL)
+	creds, err := c.Users.GetUserCredentials(context.Background())
+	if err != nil {
+		t.Fatalf("GetUserCredentials: %v", err)
+	}
+	if creds.User.Mnemonic != mnemonicHex {
+		t.Fatalf("Mnemonic = %q, want %q", creds.User.Mnemonic, mnemonicHex)
+	}
+	if creds.NewToken != "new" {
+		t.Fatalf("NewToken = %q, want %q", creds.NewToken, "new")
+	}
+}
+
 func TestOfflineCanceledContext(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("request must not be made after cancellation")
