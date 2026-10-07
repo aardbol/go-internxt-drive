@@ -67,9 +67,8 @@ func TestFoldersIntegration(t *testing.T) {
 		if folder.Children == nil {
 			t.Fatalf("folder.Children is nil")
 		}
-		if folder.Files == nil {
-			t.Fatalf("folder.Files is nil")
-		}
+		// The API returns null (not []) for folders without direct files,
+		// so only assert emptiness, not non-nil-ness.
 		if len(folder.Files) != 0 {
 			t.Fatalf("folder.Files should be 0, but is %d", len(folder.Files))
 		}
@@ -83,11 +82,11 @@ func TestFoldersIntegration(t *testing.T) {
 		if folder.Children[0].Children[0].PlainName != foldersSubfolder2 {
 			t.Fatalf("folder.Children[0].Children[0]'s name should be '%s' but is %s", foldersSubfolder2, folder.Children[0].Children[0].PlainName)
 		}
-		if folder.Children[0].Files[0].PlainName != "1" {
-			t.Fatalf("folder.Children[0].Files[0]'s name should be '1' but is %s", folder.Children[0].Files[0].PlainName)
+		if len(folder.Children[0].Files) != 1 || folder.Children[0].Files[0].PlainName != "1" {
+			t.Fatalf("folder.Children[0] should contain exactly file '1', got %+v", folder.Children[0].Files)
 		}
-		if folder.Children[0].Children[0].Files[0].PlainName != "2" {
-			t.Fatalf("folder.Children[0].Children[0].Files[0]'s name should be '2' but is %s", folder.Children[0].Children[0].Files[0].PlainName)
+		if len(folder.Children[0].Children[0].Files) != 1 || folder.Children[0].Children[0].Files[0].PlainName != "2" {
+			t.Fatalf("folder.Children[0].Children[0] should contain exactly file '2', got %+v", folder.Children[0].Children[0].Files)
 		}
 	})
 
