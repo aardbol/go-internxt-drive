@@ -125,6 +125,104 @@ func TestOfflineMoveFilePayload(t *testing.T) {
 	}
 }
 
+func TestOfflineGetFilesQuery(t *testing.T) {
+	var gotRequest string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/drive/files" {
+			gotRequest = r.URL.String()
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[{"uuid":"file-uuid","status":"EXISTS"}]`))
+			return
+		}
+		http.Error(w, "unexpected request "+r.URL.String(), http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := newOfflineClient(t, srv.URL)
+
+	files, err := c.Files.GetFiles(context.Background(), internxtclient.GetFilesOptions{Limit: 50, Offset: 0})
+	if err != nil {
+		t.Fatalf("GetFiles: %v", err)
+	}
+	if len(files) != 1 || files[0].UUID != "file-uuid" {
+		t.Fatalf("GetFiles decoded = %+v", files)
+	}
+	if want := "/drive/files?limit=50&offset=0"; gotRequest != want {
+		t.Errorf("GetFiles request = %s, want %s", gotRequest, want)
+	}
+
+	_, err = c.Files.GetFiles(context.Background(), internxtclient.GetFilesOptions{
+		Limit:     25,
+		Offset:    100,
+		Status:    "TRASHED",
+		Sort:      "updatedAt",
+		Order:     "DESC",
+		UpdatedAt: "2026-01-01T00:00:00.000Z",
+	})
+	if err != nil {
+		t.Fatalf("GetFiles filtered: %v", err)
+	}
+	want := "/drive/files?limit=25&offset=100&order=DESC&sort=updatedAt&status=TRASHED&updatedAt=2026-01-01T00:00:00.000Z"
+	if gotRequest != want {
+		t.Errorf("GetFiles filtered request = %s, want %s", gotRequest, want)
+	}
+}
+
+func TestOfflineGetFileCount(t *testing.T) {
+	var gotRequest string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/drive/files/count" {
+			gotRequest = r.URL.String()
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"count":7}`))
+			return
+		}
+		http.Error(w, "unexpected request "+r.URL.String(), http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := newOfflineClient(t, srv.URL)
+
+	count, err := c.Files.GetFileCount(context.Background())
+	if err != nil {
+		t.Fatalf("GetFileCount: %v", err)
+	}
+	if count != 7 {
+		t.Errorf("GetFileCount = %d, want 7", count)
+	}
+	if want := "/drive/files/count"; gotRequest != want {
+		t.Errorf("GetFileCount request = %s, want %s (no query params)", gotRequest, want)
+	}
+}
+
+func TestOfflineGetFileMetaByPathEncoding(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/drive/files/meta" {
+			gotPath = r.URL.Query().Get("path")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"uuid":"file-uuid"}`))
+			return
+		}
+		http.Error(w, "unexpected request "+r.URL.String(), http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := newOfflineClient(t, srv.URL)
+
+	wantPath := "/my folder/файл 1.txt"
+	file, err := c.Files.GetFileMetaByPath(context.Background(), wantPath)
+	if err != nil {
+		t.Fatalf("GetFileMetaByPath: %v", err)
+	}
+	if file.UUID != "file-uuid" {
+		t.Errorf("decoded file = %+v", file)
+	}
+	if gotPath != wantPath {
+		t.Errorf("path query param = %q, want %q", gotPath, wantPath)
+	}
+}
+
 func TestOfflineInvalidUploadSize(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("unexpected request to %s", r.URL)

@@ -23,6 +23,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   range downloads, download guards, 429 + `Retry-After` retry, `APIError` classification,
   context cancellation.
 - Integration test for download roundtrip, ranged download, and verified download.
+- `FilesService.GetFiles` — paginated file listing (`GET /files`) with optional
+  status/sort/order/updatedAt filters (`GetFilesOptions`).
+- `FilesService.GetFileCount` — total number of files (`GET /files/count`). Takes no
+  status filter: the live API rejects the documented `status` query parameter with
+  HTTP 400 for every value (probed 2026-10-08).
+- `FilesService.GetFileMetaByPath` — file metadata by full decrypted path
+  (`GET /files/meta?path=…`), URL-encoded as a query value.
 
 ### Changed
 

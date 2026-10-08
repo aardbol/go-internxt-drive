@@ -140,3 +140,70 @@ func getFileMeta(t *testing.T, uuid string) *internxtclient.File {
 	}
 	return file
 }
+
+func TestFileListingEndpointsIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	fileMeta := createFile(t, "listing_file", testFolderUUID)
+
+	time.Sleep(1 * time.Second)
+
+	t.Run("GetFiles", func(t *testing.T) {
+		files := getFiles(t, internxtclient.GetFilesOptions{Limit: 100, Offset: 0, Status: "EXISTS"})
+		found := false
+		for _, f := range files {
+			if f.UUID == fileMeta.UUID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("can't find uploaded file in GET /files listing")
+		}
+	})
+
+	t.Run("GetFileCount", func(t *testing.T) {
+		count := getFileCount(t)
+		if count < 1 {
+			t.Fatalf("file count = %d, want >= 1", count)
+		}
+	})
+
+	t.Run("GetFileMetaByPath", func(t *testing.T) {
+		byPath := getFileMetaByPath(t, "/"+TESTFOLDER+"/listing_file")
+		if byPath.UUID != fileMeta.UUID {
+			t.Fatalf("meta by path returned uuid %s, want %s", byPath.UUID, fileMeta.UUID)
+		}
+	})
+
+	deleteFile(t, fileMeta.UUID)
+}
+
+func getFiles(t *testing.T, opts internxtclient.GetFilesOptions) []internxtclient.File {
+	files, err := c.Files.GetFiles(testCtx, opts)
+	if err != nil {
+		t.Fatalf("can't get files: %v", err)
+	}
+	return files
+}
+
+func getFileCount(t *testing.T) int64 {
+	count, err := c.Files.GetFileCount(testCtx)
+	if err != nil {
+		t.Fatalf("can't get file count: %v", err)
+	}
+	return count
+}
+
+func getFileMetaByPath(t *testing.T, filePath string) *internxtclient.File {
+	file, err := c.Files.GetFileMetaByPath(testCtx, filePath)
+	if err != nil {
+		t.Fatalf("can't get file meta by path %s: %v", filePath, err)
+	}
+	if file == nil {
+		t.Fatal("retrieved file metadata is nil")
+	}
+	return file
+}

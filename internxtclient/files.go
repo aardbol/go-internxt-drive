@@ -127,3 +127,55 @@ func (f *FilesService) GetRecentFiles(ctx context.Context, limit int) ([]File, e
 
 	return files, nil
 }
+
+// GetFilesOptions is the query set for GET /files (paginated listing).
+// Limit and Offset are required by the API; the rest are optional filters.
+type GetFilesOptions struct {
+	Limit     int    `url:"limit"`
+	Offset    int    `url:"offset"`
+	Status    string `url:"status,omitempty"`    // EXISTS | TRASHED | DELETED | ALL
+	Sort      string `url:"sort,omitempty"`      // updatedAt | uuid
+	Order     string `url:"order,omitempty"`     // ASC | DESC
+	UpdatedAt string `url:"updatedAt,omitempty"` // return files updated after this date
+}
+
+// GetFiles lists the account's files with pagination and filtering.
+func (f *FilesService) GetFiles(ctx context.Context, opts GetFilesOptions) ([]File, error) {
+	var files []File
+
+	if resp, err := f.client.doRequestWithStruct(ctx, APITypeDrive, http.MethodGet, filesPath, opts, nil, &files, nil); err != nil {
+		return nil, f.client.GetError(filesPath, resp, err)
+	}
+
+	return files, nil
+}
+
+// GetFileCount returns the total number of files in the account.
+// The live API rejects the documented status filter on this endpoint with
+// HTTP 400 for every value (probed 2026-10-08), so no query is sent.
+func (f *FilesService) GetFileCount(ctx context.Context) (int64, error) {
+	endpoint := path.Join(filesPath, "count")
+	var result struct {
+		Count int64 `json:"count"`
+	}
+
+	if resp, err := f.client.Get(ctx, APITypeDrive, endpoint, &result, nil); err != nil {
+		return -1, f.client.GetError(endpoint, resp, err)
+	}
+
+	return result.Count, nil
+}
+
+// GetFileMetaByPath gets file metadata by its full decrypted path,
+// e.g. "/folder/subfolder/file.txt". The path is URL-encoded as a query value.
+func (f *FilesService) GetFileMetaByPath(ctx context.Context, filePath string) (*File, error) {
+	endpoint := path.Join(filesPath, "meta")
+
+	var file File
+
+	if resp, err := f.client.doRequestWithQuery(ctx, APITypeDrive, http.MethodGet, endpoint, map[string]string{"path": filePath}, nil, &file, nil); err != nil {
+		return nil, f.client.GetError(endpoint, resp, err)
+	}
+
+	return &file, nil
+}
