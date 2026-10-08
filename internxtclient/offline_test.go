@@ -670,3 +670,80 @@ func TestOfflineCanceledContext(t *testing.T) {
 		t.Fatalf("got %v, want context.Canceled", err)
 	}
 }
+
+func TestOfflineCreateFileEntryPayload(t *testing.T) {
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/drive/files" {
+			gotBody, _ = io.ReadAll(r.Body)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"uuid":"new-entry-uuid","name":"n","bucket":"b","created":"now"}`))
+			return
+		}
+		http.Error(w, "unexpected request "+r.URL.String(), http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := newOfflineClient(t, srv.URL)
+
+	req := &internxtclient.CreateMetaRequest{
+		Name:           "enc-name",
+		EncryptVersion: "03-aes",
+		FolderUuid:     "folder-uuid",
+		FileID:         "stored-file-id",
+		Size:           4,
+		PlainName:      "dup_name",
+		Type:           "txt",
+	}
+	result, err := c.Files.CreateFileEntry(context.Background(), req)
+	if err != nil {
+		t.Fatalf("CreateFileEntry: %v", err)
+	}
+	if result.UUID != "new-entry-uuid" {
+		t.Errorf("CreateFileEntry decoded = %+v", result)
+	}
+
+	want := `{"name":"enc-name","bucket":"` + testBucketID + `","fileId":"stored-file-id","encryptVersion":"03-aes",` +
+		`"folderUuid":"folder-uuid","size":4,"plainName":"dup_name","type":"txt",` +
+		`"creationTime":"0001-01-01T00:00:00Z","date":"0001-01-01T00:00:00Z","modificationTime":"0001-01-01T00:00:00Z"}`
+	if string(gotBody) != want {
+		t.Errorf("request body = %s, want %s", gotBody, want)
+	}
+	if req.Bucket != "" {
+		t.Errorf("CreateFileEntry mutated the caller's request: %+v", req)
+	}
+}
+
+func TestOfflineCreateFileEntryValidation(t *testing.T) {
+	var requests int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		http.Error(w, "unexpected", http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := newOfflineClient(t, srv.URL)
+
+	if _, err := c.Files.CreateFileEntry(context.Background(), nil); err == nil {
+		t.Error("nil request: expected error")
+	}
+
+	_, err := c.Files.CreateFileEntry(context.Background(), &internxtclient.CreateMetaRequest{Size: 0, FileID: "some-id"})
+	if !errors.Is(err, internxtclient.ErrInvalidUploadSize) {
+		t.Errorf("empty file: got %v, want ErrInvalidUploadSize (live API 402s empty files on all plans)", err)
+	}
+
+	_, err = c.Files.CreateFileEntry(context.Background(), &internxtclient.CreateMetaRequest{Size: -3})
+	if !errors.Is(err, internxtclient.ErrInvalidUploadSize) {
+		t.Errorf("negative size: got %v, want ErrInvalidUploadSize", err)
+	}
+
+	_, err = c.Files.CreateFileEntry(context.Background(), &internxtclient.CreateMetaRequest{Size: 5})
+	if !errors.Is(err, internxtclient.ErrMissingFileID) {
+		t.Errorf("size>0 without fileId: got %v, want ErrMissingFileID", err)
+	}
+
+	if requests != 0 {
+		t.Errorf("validation errors must not hit the server, got %d requests", requests)
+	}
+}

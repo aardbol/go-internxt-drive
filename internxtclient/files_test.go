@@ -234,6 +234,55 @@ func TestThumbnailIntegration(t *testing.T) {
 	deleteFile(t, fileMeta.UUID)
 }
 
+func TestCreateFileEntryIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	source := createFile(t, "entry_source", testFolderUUID)
+
+	time.Sleep(1 * time.Second)
+
+	// A second entry for the same stored content (dedup) is the direct-use case of CreateFileEntry.
+	// Empty files are rejected client-side, so they are covered by the offline validation test.
+	t.Run("CreateFileEntry registers entry for stored content", func(t *testing.T) {
+		entry := createFileEntry(t, "entry_dup", source.FileID, int64(len(testBytes)))
+
+		dup := waitForFileMeta(t, entry.UUID)
+		if dup.FileID != source.FileID {
+			t.Errorf("dup entry fileId = %s, want %s", dup.FileID, source.FileID)
+		}
+		if dup.Status != "EXISTS" {
+			t.Errorf("dup entry status = %s, want EXISTS", dup.Status)
+		}
+		deleteFile(t, entry.UUID)
+	})
+
+	deleteFile(t, source.UUID)
+}
+
+// waitForFileMeta polls GetFileMeta until the entry is readable. Freshly created entries can 404 for a few hundred ms
+// after creation (read-after-write lag, observed 2026-10-08), like the logout revocation lag in the auth test.
+func waitForFileMeta(t *testing.T, uuid string) *internxtclient.File {
+	deadline := time.Now().Add(6 * time.Second)
+	var file *internxtclient.File
+	var err error
+	for {
+		file, err = c.Files.GetFileMeta(testCtx, uuid)
+		if err == nil || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatalf("file meta %s never became readable: %v", uuid, err)
+	}
+	if file.UUID != uuid {
+		t.Errorf("expected file UUID %s, got %s", uuid, file.UUID)
+	}
+	return file
+}
+
 func getFiles(t *testing.T, opts internxtclient.GetFilesOptions) []internxtclient.File {
 	files, err := c.Files.GetFiles(testCtx, opts)
 	if err != nil {
@@ -296,4 +345,26 @@ func createThumbnail(t *testing.T, fileMeta *internxtclient.CreateMetaResponse) 
 		t.Error("thumbnail id is zero")
 	}
 	return thumb
+}
+
+func createFileEntry(t *testing.T, plainName, fileID string, size int64) *internxtclient.CreateMetaResponse {
+	entry, err := c.Files.CreateFileEntry(testCtx, &internxtclient.CreateMetaRequest{
+		Name:           plainName,
+		PlainName:      plainName,
+		Type:           "txt",
+		EncryptVersion: "03-aes",
+		FolderUuid:     testFolderUUID,
+		FileID:         fileID,
+		Size:           size,
+	})
+	if err != nil {
+		t.Fatalf("can't create file entry: %v", err)
+	}
+	if entry == nil || entry.UUID == "" {
+		t.Fatal("created file entry is nil or has no uuid")
+	}
+	if entry.Bucket != c.UserData.AccessData.User.Bucket {
+		t.Errorf("created entry bucket = %s, want %s", entry.Bucket, c.UserData.AccessData.User.Bucket)
+	}
+	return entry
 }

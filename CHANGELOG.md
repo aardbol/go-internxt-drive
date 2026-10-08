@@ -34,6 +34,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (`PUT /files/{uuid}`, `ReplaceFileRequest{FileID, Size}`).
 - `FilesService.CreateThumbnail` — register a thumbnail entry for a file
   (`POST /files/thumbnail`, `CreateThumbnailRequest`/`Thumbnail` matching `ThumbnailDto`).
+- `FilesService.CreateFileEntry` — register a database entry for content already stored
+  in the bucket (`POST /files`, `CreateMetaRequest`/`CreateMetaResponse`, `ErrMissingFileID`);
+  the upload path keeps using `BucketsService.UploadFileStream`, which calls the same endpoint.
+  Empty files are rejected client-side (`ErrInvalidUploadSize`): the live API answers HTTP 402 for
+  size-0 entries on every plan — the "upgrade your plan" prompt is upsell copy, despite the
+  OpenAPI `CreateFileDto` modeling a zero-byte shape.
 
 ### Changed
 

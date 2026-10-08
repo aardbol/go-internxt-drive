@@ -3,6 +3,8 @@ package internxtclient
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"path"
 	"strconv"
@@ -241,4 +243,44 @@ func (f *FilesService) CreateThumbnail(ctx context.Context, req *CreateThumbnail
 	}
 
 	return &thumbnail, nil
+}
+
+// ErrMissingFileID indicates a file entry was requested without the fileId of
+// the stored content.
+var ErrMissingFileID = errors.New("fileId is required")
+
+// CreateFileEntry creates the database record for content that is already
+// uploaded. It does not transfer any data: FileID must point at stored
+// content, otherwise the file appears in listings but fails to download.
+//
+// Most callers want BucketsService.UploadFileStream instead, which encrypts
+// and transfers the content, then registers the entry as its final step. Use
+// CreateFileEntry directly only to add a second entry for existing content
+// (dedup) or to finish an upload interrupted after the transfer succeeded.
+//
+// Empty files are rejected client-side because they are not supported by the API.
+func (f *FilesService) CreateFileEntry(ctx context.Context, req *CreateMetaRequest) (*CreateMetaResponse, error) {
+	if req == nil {
+		return nil, errors.New("CreateFileEntry: request is nil")
+	}
+	if req.Size <= 0 {
+		return nil, fmt.Errorf("CreateFileEntry: %w: %d", ErrInvalidUploadSize, req.Size)
+	}
+	if req.FileID == "" {
+		return nil, fmt.Errorf("CreateFileEntry: %w", ErrMissingFileID)
+	}
+
+	payload := *req
+	if payload.Bucket == "" {
+		payload.Bucket = f.client.UserData.AccessData.User.Bucket
+	}
+
+	var result CreateMetaResponse
+	endpoint := filesPath
+
+	if resp, err := f.client.Post(ctx, APITypeDrive, endpoint, &payload, &result, nil); err != nil {
+		return nil, f.client.GetError(endpoint, resp, err)
+	}
+
+	return &result, nil
 }
