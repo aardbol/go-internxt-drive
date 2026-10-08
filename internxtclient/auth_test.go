@@ -3,6 +3,7 @@ package internxtclient_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	client "github.com/StarHack/go-internxt-drive/internxtclient"
 )
@@ -40,14 +41,24 @@ func logout(t *testing.T, authClient *client.Client) {
 		t.Fatalf("error logging out: %v", err)
 	}
 
-	// check if the credentials are still correct
-	correct, err := authClient.Auth.AreCredentialsCorrect(testCtx, authClient.Config.PasswordHash)
-	// Error should not be nil
-	// Error should contain "Unauthorized"
+	// Token revocation can lag the logout response, so poll briefly until
+	// the server rejects the credentials instead of sampling once.
+	deadline := time.Now().Add(5 * time.Second)
+	var correct bool
+	for {
+		correct, err = authClient.Auth.AreCredentialsCorrect(testCtx, authClient.Config.PasswordHash)
+		if err != nil || !correct || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+
+	// The result must either be an Unauthorized error or correct == false.
 	if err != nil {
 		if !strings.Contains(err.Error(), "Unauthorized") {
-			t.Fatalf("credentials are still correct after logout")
+			t.Fatalf("unexpected error checking credentials after logout: %v", err)
 		}
+		return
 	}
 	if correct {
 		t.Fatalf("credentials are still correct after logout")
