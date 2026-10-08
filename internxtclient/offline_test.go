@@ -223,6 +223,33 @@ func TestOfflineGetFileMetaByPathEncoding(t *testing.T) {
 	}
 }
 
+func TestOfflineReplaceFilePayload(t *testing.T) {
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut && r.URL.Path == "/drive/files/file-uuid" {
+			gotBody, _ = io.ReadAll(r.Body)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"uuid":"file-uuid","fileId":"new-file-id","size":"123"}`))
+			return
+		}
+		http.Error(w, "unexpected request "+r.URL.String(), http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := newOfflineClient(t, srv.URL)
+
+	replaced, err := c.Files.ReplaceFile(context.Background(), "file-uuid", &internxtclient.ReplaceFileRequest{FileID: "new-file-id", Size: 123})
+	if err != nil {
+		t.Fatalf("ReplaceFile: %v", err)
+	}
+	if replaced.UUID != "file-uuid" || replaced.FileID != "new-file-id" || replaced.Size.String() != "123" {
+		t.Errorf("ReplaceFile decoded = %+v", replaced)
+	}
+	if want := `{"fileId":"new-file-id","size":123}`; string(gotBody) != want {
+		t.Errorf("request body = %s, want %s", gotBody, want)
+	}
+}
+
 func TestOfflineInvalidUploadSize(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("unexpected request to %s", r.URL)

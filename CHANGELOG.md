@@ -30,6 +30,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   HTTP 400 for every value (probed 2026-10-08).
 - `FilesService.GetFileMetaByPath` — file metadata by full decrypted path
   (`GET /files/meta?path=…`), URL-encoded as a query value.
+- `FilesService.ReplaceFile` — point an existing file entry at newly uploaded content
+  (`PUT /files/{uuid}`, `ReplaceFileRequest{FileID, Size}`).
 
 ### Changed
 

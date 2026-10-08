@@ -179,3 +179,23 @@ func (f *FilesService) GetFileMetaByPath(ctx context.Context, filePath string) (
 
 	return &file, nil
 }
+
+// ReplaceFileRequest is the payload for PUT /files/{uuid}: the encrypted fileId
+// and size of the newly uploaded content to point the file entry at.
+type ReplaceFileRequest struct {
+	FileID string `json:"fileId"`
+	Size   int64  `json:"size"`
+}
+
+// ReplaceFile points the file entry with the given UUID at new content
+// (PUT /files/{uuid}), replacing its fileId and size.
+func (f *FilesService) ReplaceFile(ctx context.Context, fileUUID string, req *ReplaceFileRequest) (*File, error) {
+	endpoint := path.Join(filesPath, fileUUID)
+	var replacedFile File
+
+	if resp, err := f.client.Put(ctx, APITypeDrive, endpoint, req, &replacedFile, nil); err != nil {
+		return nil, f.client.GetError(endpoint, resp, err)
+	}
+
+	return &replacedFile, nil
+}

@@ -181,6 +181,34 @@ func TestFileListingEndpointsIntegration(t *testing.T) {
 	deleteFile(t, fileMeta.UUID)
 }
 
+func TestFileReplaceIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	target := createFile(t, "replace_target", testFolderUUID)
+	source := createFile(t, "replace_source", testFolderUUID)
+
+	time.Sleep(1 * time.Second)
+
+	t.Run("ReplaceFile", func(t *testing.T) {
+		req := internxtclient.ReplaceFileRequest{FileID: source.FileID, Size: int64(len(testBytes))}
+		replaced := replaceFile(t, target.UUID, req)
+		if replaced.FileID != source.FileID {
+			t.Fatalf("replaced file has fileId %s, want %s", replaced.FileID, source.FileID)
+		}
+
+		// the replacement must be persisted, not just echoed
+		byPath := getFileMetaByPath(t, "/"+TESTFOLDER+"/replace_target")
+		if byPath.FileID != source.FileID {
+			t.Errorf("after replace, stored fileId is %s, want %s", byPath.FileID, source.FileID)
+		}
+	})
+
+	deleteFile(t, target.UUID)
+	deleteFile(t, source.UUID)
+}
+
 func getFiles(t *testing.T, opts internxtclient.GetFilesOptions) []internxtclient.File {
 	files, err := c.Files.GetFiles(testCtx, opts)
 	if err != nil {
@@ -206,4 +234,18 @@ func getFileMetaByPath(t *testing.T, filePath string) *internxtclient.File {
 		t.Fatal("retrieved file metadata is nil")
 	}
 	return file
+}
+
+func replaceFile(t *testing.T, fileUUID string, req internxtclient.ReplaceFileRequest) *internxtclient.File {
+	replaced, err := c.Files.ReplaceFile(testCtx, fileUUID, &req)
+	if err != nil {
+		t.Fatalf("can't replace file %s: %v", fileUUID, err)
+	}
+	if replaced == nil {
+		t.Fatal("replaced file is nil")
+	}
+	if replaced.UUID != fileUUID {
+		t.Errorf("expected replaced file UUID %s, got %s", fileUUID, replaced.UUID)
+	}
+	return replaced
 }
