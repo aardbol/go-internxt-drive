@@ -32,6 +32,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (`GET /files/meta?path=…`), URL-encoded as a query value.
 - `FilesService.ReplaceFile` — point an existing file entry at newly uploaded content
   (`PUT /files/{uuid}`, `ReplaceFileRequest{FileID, Size}`).
+- `FilesService.CreateThumbnail` — register a thumbnail entry for a file
+  (`POST /files/thumbnail`, `CreateThumbnailRequest`/`Thumbnail` matching `ThumbnailDto`).
 
 ### Changed
 

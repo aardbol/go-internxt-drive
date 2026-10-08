@@ -199,3 +199,46 @@ func (f *FilesService) ReplaceFile(ctx context.Context, fileUUID string, req *Re
 
 	return &replacedFile, nil
 }
+
+// CreateThumbnailRequest is the payload for POST /files/thumbnail, matching the API's CreateThumbnailDto.
+// The deprecated numeric fileId field is omitted; the file is referenced by FileUUID.
+type CreateThumbnailRequest struct {
+	FileUUID       string `json:"fileUuid"`
+	Type           string `json:"type"`
+	Size           int64  `json:"size"`
+	MaxWidth       int    `json:"maxWidth"`
+	MaxHeight      int    `json:"maxHeight"`
+	BucketID       string `json:"bucketId"`
+	BucketFile     string `json:"bucketFile"`
+	EncryptVersion string `json:"encryptVersion"`
+}
+
+// Thumbnail is a thumbnail entry as returned by POST /files/thumbnail
+// (ThumbnailDto). FileID is the numeric id of the parent file record.
+type Thumbnail struct {
+	ID             int64       `json:"id"`
+	FileID         json.Number `json:"fileId"`
+	FileUUID       string      `json:"fileUuid"`
+	Type           string      `json:"type"`
+	Size           json.Number `json:"size"`
+	MaxWidth       int         `json:"maxWidth"`
+	MaxHeight      int         `json:"maxHeight"`
+	BucketID       string      `json:"bucketId"`
+	BucketFile     string      `json:"bucketFile"`
+	EncryptVersion string      `json:"encryptVersion"`
+	CreatedAt      time.Time   `json:"createdAt"`
+	UpdatedAt      time.Time   `json:"updatedAt"`
+}
+
+// CreateThumbnail registers a thumbnail entry for the file with the given UUID.
+// It only creates the metadata record; the thumbnail content itself must be uploaded separately under BucketFile.
+func (f *FilesService) CreateThumbnail(ctx context.Context, req *CreateThumbnailRequest) (*Thumbnail, error) {
+	endpoint := path.Join(filesPath, "thumbnail")
+	var thumbnail Thumbnail
+
+	if resp, err := f.client.Post(ctx, APITypeDrive, endpoint, req, &thumbnail, nil); err != nil {
+		return nil, f.client.GetError(endpoint, resp, err)
+	}
+
+	return &thumbnail, nil
+}

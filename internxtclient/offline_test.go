@@ -250,6 +250,46 @@ func TestOfflineReplaceFilePayload(t *testing.T) {
 	}
 }
 
+func TestOfflineCreateThumbnailPayload(t *testing.T) {
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/drive/files/thumbnail" {
+			gotBody, _ = io.ReadAll(r.Body)
+			w.Header().Set("Content-Type", "application/json")
+			// Verbatim live response captured 2026-10-08.
+			_, _ = w.Write([]byte(`{"id":440764818,"fileId":1752890934,"fileUuid":"01a11c3c-0ed3-74fe-b651-e6068919fd2a","type":"png","size":"100","bucketId":"6ac661bc7dab71b3654a47f5","bucketFile":"6ac7bd733f8817d45492fe4a","encryptVersion":"03-aes","createdAt":"2026-10-08T15:57:42.745Z","updatedAt":"2026-10-08T15:57:42.746Z","maxWidth":20,"maxHeight":20}`))
+			return
+		}
+		http.Error(w, "unexpected request "+r.URL.String(), http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := newOfflineClient(t, srv.URL)
+
+	thumb, err := c.Files.CreateThumbnail(context.Background(), &internxtclient.CreateThumbnailRequest{
+		FileUUID:       "01a11c3c-0ed3-74fe-b651-e6068919fd2a",
+		Type:           "png",
+		Size:           100,
+		MaxWidth:       20,
+		MaxHeight:      20,
+		BucketID:       "6ac661bc7dab71b3654a47f5",
+		BucketFile:     "6ac7bd733f8817d45492fe4a",
+		EncryptVersion: "03-aes",
+	})
+	if err != nil {
+		t.Fatalf("CreateThumbnail: %v", err)
+	}
+	if want := `{"fileUuid":"01a11c3c-0ed3-74fe-b651-e6068919fd2a","type":"png","size":100,"maxWidth":20,"maxHeight":20,"bucketId":"6ac661bc7dab71b3654a47f5","bucketFile":"6ac7bd733f8817d45492fe4a","encryptVersion":"03-aes"}`; string(gotBody) != want {
+		t.Errorf("request body = %s, want %s", gotBody, want)
+	}
+	if thumb.ID != 440764818 || thumb.FileID.String() != "1752890934" || thumb.Size.String() != "100" {
+		t.Errorf("decoded thumbnail = %+v", thumb)
+	}
+	if thumb.MaxWidth != 20 || thumb.MaxHeight != 20 || thumb.EncryptVersion != "03-aes" {
+		t.Errorf("thumbnail fields mismatch: %+v", thumb)
+	}
+}
+
 func TestOfflineInvalidUploadSize(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("unexpected request to %s", r.URL)

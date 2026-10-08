@@ -209,6 +209,31 @@ func TestFileReplaceIntegration(t *testing.T) {
 	deleteFile(t, source.UUID)
 }
 
+func TestThumbnailIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	fileMeta := createFile(t, "thumbnail_file", testFolderUUID)
+
+	time.Sleep(1 * time.Second)
+
+	t.Run("CreateThumbnail", func(t *testing.T) {
+		thumb := createThumbnail(t, fileMeta)
+		if thumb.FileUUID != fileMeta.UUID {
+			t.Errorf("thumbnail fileUuid = %s, want %s", thumb.FileUUID, fileMeta.UUID)
+		}
+		if thumb.ID == 0 {
+			t.Errorf("thumbnail id is 0")
+		}
+		if thumb.BucketFile != fileMeta.FileID {
+			t.Errorf("thumbnail bucketFile = %s, want %s", thumb.BucketFile, fileMeta.FileID)
+		}
+	})
+
+	deleteFile(t, fileMeta.UUID)
+}
+
 func getFiles(t *testing.T, opts internxtclient.GetFilesOptions) []internxtclient.File {
 	files, err := c.Files.GetFiles(testCtx, opts)
 	if err != nil {
@@ -248,4 +273,27 @@ func replaceFile(t *testing.T, fileUUID string, req internxtclient.ReplaceFileRe
 		t.Errorf("expected replaced file UUID %s, got %s", fileUUID, replaced.UUID)
 	}
 	return replaced
+}
+
+func createThumbnail(t *testing.T, fileMeta *internxtclient.CreateMetaResponse) *internxtclient.Thumbnail {
+	thumb, err := c.Files.CreateThumbnail(testCtx, &internxtclient.CreateThumbnailRequest{
+		FileUUID:       fileMeta.UUID,
+		Type:           "png",
+		Size:           int64(len(testBytes)),
+		MaxWidth:       20,
+		MaxHeight:      20,
+		BucketID:       fileMeta.Bucket,
+		BucketFile:     fileMeta.FileID,
+		EncryptVersion: fileMeta.EncryptVersion,
+	})
+	if err != nil {
+		t.Fatalf("can't create thumbnail: %v", err)
+	}
+	if thumb == nil {
+		t.Fatal("thumbnail is nil")
+	}
+	if thumb.ID == 0 {
+		t.Error("thumbnail id is zero")
+	}
+	return thumb
 }
