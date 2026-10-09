@@ -125,6 +125,171 @@ func TestOfflineMoveFilePayload(t *testing.T) {
 	}
 }
 
+func TestOfflineGetFilesQuery(t *testing.T) {
+	var gotRequest string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/drive/files" {
+			gotRequest = r.URL.String()
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[{"uuid":"file-uuid","status":"EXISTS"}]`))
+			return
+		}
+		http.Error(w, "unexpected request "+r.URL.String(), http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := newOfflineClient(t, srv.URL)
+
+	files, err := c.Files.GetFiles(context.Background(), internxtclient.GetFilesOptions{Limit: 50, Offset: 0})
+	if err != nil {
+		t.Fatalf("GetFiles: %v", err)
+	}
+	if len(files) != 1 || files[0].UUID != "file-uuid" {
+		t.Fatalf("GetFiles decoded = %+v", files)
+	}
+	if want := "/drive/files?limit=50&offset=0"; gotRequest != want {
+		t.Errorf("GetFiles request = %s, want %s", gotRequest, want)
+	}
+
+	_, err = c.Files.GetFiles(context.Background(), internxtclient.GetFilesOptions{
+		Limit:     25,
+		Offset:    100,
+		Status:    "TRASHED",
+		Sort:      "updatedAt",
+		Order:     "DESC",
+		UpdatedAt: "2026-01-01T00:00:00.000Z",
+	})
+	if err != nil {
+		t.Fatalf("GetFiles filtered: %v", err)
+	}
+	want := "/drive/files?limit=25&offset=100&order=DESC&sort=updatedAt&status=TRASHED&updatedAt=2026-01-01T00:00:00.000Z"
+	if gotRequest != want {
+		t.Errorf("GetFiles filtered request = %s, want %s", gotRequest, want)
+	}
+}
+
+func TestOfflineGetFileCount(t *testing.T) {
+	var gotRequest string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/drive/files/count" {
+			gotRequest = r.URL.String()
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"count":7}`))
+			return
+		}
+		http.Error(w, "unexpected request "+r.URL.String(), http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := newOfflineClient(t, srv.URL)
+
+	count, err := c.Files.GetFileCount(context.Background())
+	if err != nil {
+		t.Fatalf("GetFileCount: %v", err)
+	}
+	if count != 7 {
+		t.Errorf("GetFileCount = %d, want 7", count)
+	}
+	if want := "/drive/files/count"; gotRequest != want {
+		t.Errorf("GetFileCount request = %s, want %s (no query params)", gotRequest, want)
+	}
+}
+
+func TestOfflineGetFileMetaByPathEncoding(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/drive/files/meta" {
+			gotPath = r.URL.Query().Get("path")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"uuid":"file-uuid"}`))
+			return
+		}
+		http.Error(w, "unexpected request "+r.URL.String(), http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := newOfflineClient(t, srv.URL)
+
+	wantPath := "/my folder/файл 1.txt"
+	file, err := c.Files.GetFileMetaByPath(context.Background(), wantPath)
+	if err != nil {
+		t.Fatalf("GetFileMetaByPath: %v", err)
+	}
+	if file.UUID != "file-uuid" {
+		t.Errorf("decoded file = %+v", file)
+	}
+	if gotPath != wantPath {
+		t.Errorf("path query param = %q, want %q", gotPath, wantPath)
+	}
+}
+
+func TestOfflineReplaceFilePayload(t *testing.T) {
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut && r.URL.Path == "/drive/files/file-uuid" {
+			gotBody, _ = io.ReadAll(r.Body)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"uuid":"file-uuid","fileId":"new-file-id","size":"123"}`))
+			return
+		}
+		http.Error(w, "unexpected request "+r.URL.String(), http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := newOfflineClient(t, srv.URL)
+
+	replaced, err := c.Files.ReplaceFile(context.Background(), "file-uuid", &internxtclient.ReplaceFileRequest{FileID: "new-file-id", Size: 123})
+	if err != nil {
+		t.Fatalf("ReplaceFile: %v", err)
+	}
+	if replaced.UUID != "file-uuid" || replaced.FileID != "new-file-id" || replaced.Size.String() != "123" {
+		t.Errorf("ReplaceFile decoded = %+v", replaced)
+	}
+	if want := `{"fileId":"new-file-id","size":123}`; string(gotBody) != want {
+		t.Errorf("request body = %s, want %s", gotBody, want)
+	}
+}
+
+func TestOfflineCreateThumbnailPayload(t *testing.T) {
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/drive/files/thumbnail" {
+			gotBody, _ = io.ReadAll(r.Body)
+			w.Header().Set("Content-Type", "application/json")
+			// Verbatim live response captured 2026-10-08.
+			_, _ = w.Write([]byte(`{"id":440764818,"fileId":1752890934,"fileUuid":"01a11c3c-0ed3-74fe-b651-e6068919fd2a","type":"png","size":"100","bucketId":"6ac661bc7dab71b3654a47f5","bucketFile":"6ac7bd733f8817d45492fe4a","encryptVersion":"03-aes","createdAt":"2026-10-08T15:57:42.745Z","updatedAt":"2026-10-08T15:57:42.746Z","maxWidth":20,"maxHeight":20}`))
+			return
+		}
+		http.Error(w, "unexpected request "+r.URL.String(), http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := newOfflineClient(t, srv.URL)
+
+	thumb, err := c.Files.CreateThumbnail(context.Background(), &internxtclient.CreateThumbnailRequest{
+		FileUUID:       "01a11c3c-0ed3-74fe-b651-e6068919fd2a",
+		Type:           "png",
+		Size:           100,
+		MaxWidth:       20,
+		MaxHeight:      20,
+		BucketID:       "6ac661bc7dab71b3654a47f5",
+		BucketFile:     "6ac7bd733f8817d45492fe4a",
+		EncryptVersion: "03-aes",
+	})
+	if err != nil {
+		t.Fatalf("CreateThumbnail: %v", err)
+	}
+	if want := `{"fileUuid":"01a11c3c-0ed3-74fe-b651-e6068919fd2a","type":"png","size":100,"maxWidth":20,"maxHeight":20,"bucketId":"6ac661bc7dab71b3654a47f5","bucketFile":"6ac7bd733f8817d45492fe4a","encryptVersion":"03-aes"}`; string(gotBody) != want {
+		t.Errorf("request body = %s, want %s", gotBody, want)
+	}
+	if thumb.ID != 440764818 || thumb.FileID.String() != "1752890934" || thumb.Size.String() != "100" {
+		t.Errorf("decoded thumbnail = %+v", thumb)
+	}
+	if thumb.MaxWidth != 20 || thumb.MaxHeight != 20 || thumb.EncryptVersion != "03-aes" {
+		t.Errorf("thumbnail fields mismatch: %+v", thumb)
+	}
+}
+
 func TestOfflineInvalidUploadSize(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("unexpected request to %s", r.URL)
@@ -503,5 +668,82 @@ func TestOfflineCanceledContext(t *testing.T) {
 	_, err := c.Files.GetFileMeta(ctx, "file-uuid")
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("got %v, want context.Canceled", err)
+	}
+}
+
+func TestOfflineCreateFileEntryPayload(t *testing.T) {
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/drive/files" {
+			gotBody, _ = io.ReadAll(r.Body)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"uuid":"new-entry-uuid","name":"n","bucket":"b","created":"now"}`))
+			return
+		}
+		http.Error(w, "unexpected request "+r.URL.String(), http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := newOfflineClient(t, srv.URL)
+
+	req := &internxtclient.CreateMetaRequest{
+		Name:           "enc-name",
+		EncryptVersion: "03-aes",
+		FolderUuid:     "folder-uuid",
+		FileID:         "stored-file-id",
+		Size:           4,
+		PlainName:      "dup_name",
+		Type:           "txt",
+	}
+	result, err := c.Files.CreateFileEntry(context.Background(), req)
+	if err != nil {
+		t.Fatalf("CreateFileEntry: %v", err)
+	}
+	if result.UUID != "new-entry-uuid" {
+		t.Errorf("CreateFileEntry decoded = %+v", result)
+	}
+
+	want := `{"name":"enc-name","bucket":"` + testBucketID + `","fileId":"stored-file-id","encryptVersion":"03-aes",` +
+		`"folderUuid":"folder-uuid","size":4,"plainName":"dup_name","type":"txt",` +
+		`"creationTime":"0001-01-01T00:00:00Z","date":"0001-01-01T00:00:00Z","modificationTime":"0001-01-01T00:00:00Z"}`
+	if string(gotBody) != want {
+		t.Errorf("request body = %s, want %s", gotBody, want)
+	}
+	if req.Bucket != "" {
+		t.Errorf("CreateFileEntry mutated the caller's request: %+v", req)
+	}
+}
+
+func TestOfflineCreateFileEntryValidation(t *testing.T) {
+	var requests int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		http.Error(w, "unexpected", http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := newOfflineClient(t, srv.URL)
+
+	if _, err := c.Files.CreateFileEntry(context.Background(), nil); err == nil {
+		t.Error("nil request: expected error")
+	}
+
+	_, err := c.Files.CreateFileEntry(context.Background(), &internxtclient.CreateMetaRequest{Size: 0, FileID: "some-id"})
+	if !errors.Is(err, internxtclient.ErrInvalidUploadSize) {
+		t.Errorf("empty file: got %v, want ErrInvalidUploadSize (live API 402s empty files on all plans)", err)
+	}
+
+	_, err = c.Files.CreateFileEntry(context.Background(), &internxtclient.CreateMetaRequest{Size: -3})
+	if !errors.Is(err, internxtclient.ErrInvalidUploadSize) {
+		t.Errorf("negative size: got %v, want ErrInvalidUploadSize", err)
+	}
+
+	_, err = c.Files.CreateFileEntry(context.Background(), &internxtclient.CreateMetaRequest{Size: 5})
+	if !errors.Is(err, internxtclient.ErrMissingFileID) {
+		t.Errorf("size>0 without fileId: got %v, want ErrMissingFileID", err)
+	}
+
+	if requests != 0 {
+		t.Errorf("validation errors must not hit the server, got %d requests", requests)
 	}
 }

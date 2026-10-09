@@ -3,6 +3,8 @@ package internxtclient
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"path"
 	"strconv"
@@ -46,7 +48,9 @@ type File struct {
 
 const filesPath = "/files"
 
-// GetFileMeta gets file with metadata by UUID
+// GetFileMeta gets file with metadata by UUID.
+// A freshly created entry may briefly answer 404 and a just-mutated one may briefly return its pre-update state.
+// Poll with the caller's context budget if you need read-your-writes.
 func (f *FilesService) GetFileMeta(ctx context.Context, fileUUID string) (*File, error) {
 	endpoint := path.Join(filesPath, fileUUID, "meta")
 
@@ -58,7 +62,8 @@ func (f *FilesService) GetFileMeta(ctx context.Context, fileUUID string) (*File,
 	return &file, nil
 }
 
-// DeleteFile deletes a file by UUID
+// DeleteFile deletes a file by UUID. The entry can remain readable for a
+// short while afterwards (status DELETED) before it is purged server-side.
 func (f *FilesService) DeleteFile(ctx context.Context, uuid string) error {
 	endpoint := path.Join(filesPath, uuid)
 
@@ -77,6 +82,7 @@ type UpdateFileMetaRequest struct {
 }
 
 // UpdateFileMeta updates the metadata of a file with the given UUID.
+// The response is authoritative; subsequent reads can briefly serve the pre-update state (see GetFileMeta).
 func (f *FilesService) UpdateFileMeta(ctx context.Context, fileUUID string, updated *UpdateFileMetaRequest) (*File, error) {
 	endpoint := path.Join(filesPath, fileUUID, "meta")
 	var updatedFile File
@@ -102,8 +108,9 @@ func (f *FilesService) MoveFile(ctx context.Context, fileUUID, destinationFolder
 	return f.MoveFileWithRequest(ctx, fileUUID, &MoveFileRequest{DestinationFolder: destinationFolderUUID})
 }
 
-// MoveFileWithRequest moves the file with the given UUID and applies the
-// optional rename fields of the request in the same operation.
+// MoveFileWithRequest moves the file with the given UUID and applies the optional rename fields of the request in the same operation.
+// Just-uploaded files go through a server-side maturation window: the move can answer 404 or 422 "can not be moved" for a few seconds
+// after upload (observed 2026-10-08). The API offers no readiness signal; retrying within a caller-chosen deadline is the only workaround.
 func (f *FilesService) MoveFileWithRequest(ctx context.Context, fileUUID string, req *MoveFileRequest) (*File, error) {
 	endpoint := path.Join(filesPath, fileUUID)
 	var movedFile File
@@ -126,4 +133,162 @@ func (f *FilesService) GetRecentFiles(ctx context.Context, limit int) ([]File, e
 	}
 
 	return files, nil
+}
+
+// GetFilesOptions is the query set for GET /files (paginated listing).
+// Limit and Offset are required by the API; the rest are optional filters.
+type GetFilesOptions struct {
+	Limit     int    `url:"limit"`
+	Offset    int    `url:"offset"`
+	Status    string `url:"status,omitempty"`    // EXISTS | TRASHED | DELETED | ALL
+	Sort      string `url:"sort,omitempty"`      // updatedAt | uuid
+	Order     string `url:"order,omitempty"`     // ASC | DESC
+	UpdatedAt string `url:"updatedAt,omitempty"` // return files updated after this date
+}
+
+// GetFiles lists the account's files with pagination and filtering.
+// Like GetFileMeta, listings lag writes briefly: a just-created or just-deleted file can be missing/present for a few seconds.
+func (f *FilesService) GetFiles(ctx context.Context, opts GetFilesOptions) ([]File, error) {
+	var files []File
+
+	if resp, err := f.client.doRequestWithStruct(ctx, APITypeDrive, http.MethodGet, filesPath, opts, nil, &files, nil); err != nil {
+		return nil, f.client.GetError(filesPath, resp, err)
+	}
+
+	return files, nil
+}
+
+// GetFileCount returns the total number of files in the account.
+// The live API rejects the documented status filter on this endpoint with
+// HTTP 400 for every value (probed 2026-10-08), so no query is sent.
+func (f *FilesService) GetFileCount(ctx context.Context) (int64, error) {
+	endpoint := path.Join(filesPath, "count")
+	var result struct {
+		Count int64 `json:"count"`
+	}
+
+	if resp, err := f.client.Get(ctx, APITypeDrive, endpoint, &result, nil); err != nil {
+		return -1, f.client.GetError(endpoint, resp, err)
+	}
+
+	return result.Count, nil
+}
+
+// GetFileMetaByPath gets file metadata by its full decrypted path,
+// e.g. "/folder/subfolder/file.txt". The path is URL-encoded as a query value.
+// Subject to the same read-after-write lag as GetFileMeta.
+func (f *FilesService) GetFileMetaByPath(ctx context.Context, filePath string) (*File, error) {
+	endpoint := path.Join(filesPath, "meta")
+
+	var file File
+
+	if resp, err := f.client.doRequestWithQuery(ctx, APITypeDrive, http.MethodGet, endpoint, map[string]string{"path": filePath}, nil, &file, nil); err != nil {
+		return nil, f.client.GetError(endpoint, resp, err)
+	}
+
+	return &file, nil
+}
+
+// ReplaceFileRequest is the payload for PUT /files/{uuid}: the encrypted fileId
+// and size of the newly uploaded content to point the file entry at.
+type ReplaceFileRequest struct {
+	FileID string `json:"fileId"`
+	Size   int64  `json:"size"`
+}
+
+// ReplaceFile points the file entry with the given UUID at new content (PUT /files/{uuid}), replacing its fileId and size.
+// The response is authoritative; subsequent reads can briefly serve the pre-replace state (see GetFileMeta).
+func (f *FilesService) ReplaceFile(ctx context.Context, fileUUID string, req *ReplaceFileRequest) (*File, error) {
+	endpoint := path.Join(filesPath, fileUUID)
+	var replacedFile File
+
+	if resp, err := f.client.Put(ctx, APITypeDrive, endpoint, req, &replacedFile, nil); err != nil {
+		return nil, f.client.GetError(endpoint, resp, err)
+	}
+
+	return &replacedFile, nil
+}
+
+// CreateThumbnailRequest is the payload for POST /files/thumbnail, matching the API's CreateThumbnailDto.
+// The deprecated numeric fileId field is omitted; the file is referenced by FileUUID.
+type CreateThumbnailRequest struct {
+	FileUUID       string `json:"fileUuid"`
+	Type           string `json:"type"`
+	Size           int64  `json:"size"`
+	MaxWidth       int    `json:"maxWidth"`
+	MaxHeight      int    `json:"maxHeight"`
+	BucketID       string `json:"bucketId"`
+	BucketFile     string `json:"bucketFile"`
+	EncryptVersion string `json:"encryptVersion"`
+}
+
+// Thumbnail is a thumbnail entry as returned by POST /files/thumbnail
+// (ThumbnailDto). FileID is the numeric id of the parent file record.
+type Thumbnail struct {
+	ID             int64       `json:"id"`
+	FileID         json.Number `json:"fileId"`
+	FileUUID       string      `json:"fileUuid"`
+	Type           string      `json:"type"`
+	Size           json.Number `json:"size"`
+	MaxWidth       int         `json:"maxWidth"`
+	MaxHeight      int         `json:"maxHeight"`
+	BucketID       string      `json:"bucketId"`
+	BucketFile     string      `json:"bucketFile"`
+	EncryptVersion string      `json:"encryptVersion"`
+	CreatedAt      time.Time   `json:"createdAt"`
+	UpdatedAt      time.Time   `json:"updatedAt"`
+}
+
+// CreateThumbnail registers a thumbnail entry for the file with the given UUID.
+// It only creates the metadata record; the thumbnail content itself must be uploaded separately under BucketFile.
+func (f *FilesService) CreateThumbnail(ctx context.Context, req *CreateThumbnailRequest) (*Thumbnail, error) {
+	endpoint := path.Join(filesPath, "thumbnail")
+	var thumbnail Thumbnail
+
+	if resp, err := f.client.Post(ctx, APITypeDrive, endpoint, req, &thumbnail, nil); err != nil {
+		return nil, f.client.GetError(endpoint, resp, err)
+	}
+
+	return &thumbnail, nil
+}
+
+// ErrMissingFileID indicates a file entry was requested without the fileId of
+// the stored content.
+var ErrMissingFileID = errors.New("fileId is required")
+
+// CreateFileEntry creates the database record for content that is already
+// uploaded. It does not transfer any data: FileID must point at stored
+// content, otherwise the file appears in listings but fails to download.
+//
+// Most callers want BucketsService.UploadFileStream instead, which encrypts
+// and transfers the content, then registers the entry as its final step. Use
+// CreateFileEntry directly only to add a second entry for existing content
+// (dedup) or to finish an upload interrupted after the transfer succeeded.
+//
+// Empty files are rejected client-side because they are not supported by the API.
+// The created entry can be 404 on first reads for a few seconds (see GetFileMeta).
+func (f *FilesService) CreateFileEntry(ctx context.Context, req *CreateMetaRequest) (*CreateMetaResponse, error) {
+	if req == nil {
+		return nil, errors.New("CreateFileEntry: request is nil")
+	}
+	if req.Size <= 0 {
+		return nil, fmt.Errorf("CreateFileEntry: %w: %d", ErrInvalidUploadSize, req.Size)
+	}
+	if req.FileID == "" {
+		return nil, fmt.Errorf("CreateFileEntry: %w", ErrMissingFileID)
+	}
+
+	payload := *req
+	if payload.Bucket == "" {
+		payload.Bucket = f.client.UserData.AccessData.User.Bucket
+	}
+
+	var result CreateMetaResponse
+	endpoint := filesPath
+
+	if resp, err := f.client.Post(ctx, APITypeDrive, endpoint, &payload, &result, nil); err != nil {
+		return nil, f.client.GetError(endpoint, resp, err)
+	}
+
+	return &result, nil
 }

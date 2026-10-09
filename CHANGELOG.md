@@ -23,6 +23,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   range downloads, download guards, 429 + `Retry-After` retry, `APIError` classification,
   context cancellation.
 - Integration test for download roundtrip, ranged download, and verified download.
+- `FilesService.GetFiles` — paginated file listing (`GET /files`) with optional
+  status/sort/order/updatedAt filters (`GetFilesOptions`).
+- `FilesService.GetFileCount` — total number of files (`GET /files/count`). Takes no
+  status filter: the live API rejects the documented `status` query parameter with
+  HTTP 400 for every value (probed 2026-10-08).
+- `FilesService.GetFileMetaByPath` — file metadata by full decrypted path
+  (`GET /files/meta?path=…`), URL-encoded as a query value.
+- `FilesService.ReplaceFile` — point an existing file entry at newly uploaded content
+  (`PUT /files/{uuid}`, `ReplaceFileRequest{FileID, Size}`).
+- `FilesService.CreateThumbnail` — register a thumbnail entry for a file
+  (`POST /files/thumbnail`, `CreateThumbnailRequest`/`Thumbnail` matching `ThumbnailDto`).
+- `FilesService.CreateFileEntry` — register a database entry for content already stored
+  in the bucket (`POST /files`, `CreateMetaRequest`/`CreateMetaResponse`, `ErrMissingFileID`);
+  the upload path keeps using `BucketsService.UploadFileStream`, which calls the same endpoint.
+  Empty files are rejected client-side (`ErrInvalidUploadSize`): the live API answers HTTP 402 for
+  size-0 entries on every plan — the "upgrade your plan" prompt is upsell copy, despite the
+  OpenAPI `CreateFileDto` modeling a zero-byte shape.
 
 ### Changed
 
@@ -44,6 +61,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `RootFolderUUID string` (`rootFolderId`, the root folder UUID).
 - Uploads reject a non-positive size up front (`ErrInvalidUploadSize`).
 - `Transfer` no longer applies a hardcoded 15-minute timeout; use the context.
+- Documented Internxt's server-side propagation windows on the file lifecycle: freshly created
+  entries can 404 briefly on reads, mutations can briefly read back stale, and just-uploaded
+  files go through a maturation window where moves answer 404/422.
+  Client behavior is unchanged; poll with your context budget where you need read-your-writes.
 
 ### Removed
 
