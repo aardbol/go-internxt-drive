@@ -48,7 +48,9 @@ type File struct {
 
 const filesPath = "/files"
 
-// GetFileMeta gets file with metadata by UUID
+// GetFileMeta gets file with metadata by UUID.
+// A freshly created entry may briefly answer 404 and a just-mutated one may briefly return its pre-update state.
+// Poll with the caller's context budget if you need read-your-writes.
 func (f *FilesService) GetFileMeta(ctx context.Context, fileUUID string) (*File, error) {
 	endpoint := path.Join(filesPath, fileUUID, "meta")
 
@@ -60,7 +62,8 @@ func (f *FilesService) GetFileMeta(ctx context.Context, fileUUID string) (*File,
 	return &file, nil
 }
 
-// DeleteFile deletes a file by UUID
+// DeleteFile deletes a file by UUID. The entry can remain readable for a
+// short while afterwards (status DELETED) before it is purged server-side.
 func (f *FilesService) DeleteFile(ctx context.Context, uuid string) error {
 	endpoint := path.Join(filesPath, uuid)
 
@@ -79,6 +82,7 @@ type UpdateFileMetaRequest struct {
 }
 
 // UpdateFileMeta updates the metadata of a file with the given UUID.
+// The response is authoritative; subsequent reads can briefly serve the pre-update state (see GetFileMeta).
 func (f *FilesService) UpdateFileMeta(ctx context.Context, fileUUID string, updated *UpdateFileMetaRequest) (*File, error) {
 	endpoint := path.Join(filesPath, fileUUID, "meta")
 	var updatedFile File
@@ -104,8 +108,9 @@ func (f *FilesService) MoveFile(ctx context.Context, fileUUID, destinationFolder
 	return f.MoveFileWithRequest(ctx, fileUUID, &MoveFileRequest{DestinationFolder: destinationFolderUUID})
 }
 
-// MoveFileWithRequest moves the file with the given UUID and applies the
-// optional rename fields of the request in the same operation.
+// MoveFileWithRequest moves the file with the given UUID and applies the optional rename fields of the request in the same operation.
+// Just-uploaded files go through a server-side maturation window: the move can answer 404 or 422 "can not be moved" for a few seconds
+// after upload (observed 2026-10-08). The API offers no readiness signal; retrying within a caller-chosen deadline is the only workaround.
 func (f *FilesService) MoveFileWithRequest(ctx context.Context, fileUUID string, req *MoveFileRequest) (*File, error) {
 	endpoint := path.Join(filesPath, fileUUID)
 	var movedFile File
@@ -142,6 +147,7 @@ type GetFilesOptions struct {
 }
 
 // GetFiles lists the account's files with pagination and filtering.
+// Like GetFileMeta, listings lag writes briefly: a just-created or just-deleted file can be missing/present for a few seconds.
 func (f *FilesService) GetFiles(ctx context.Context, opts GetFilesOptions) ([]File, error) {
 	var files []File
 
@@ -170,6 +176,7 @@ func (f *FilesService) GetFileCount(ctx context.Context) (int64, error) {
 
 // GetFileMetaByPath gets file metadata by its full decrypted path,
 // e.g. "/folder/subfolder/file.txt". The path is URL-encoded as a query value.
+// Subject to the same read-after-write lag as GetFileMeta.
 func (f *FilesService) GetFileMetaByPath(ctx context.Context, filePath string) (*File, error) {
 	endpoint := path.Join(filesPath, "meta")
 
@@ -189,8 +196,8 @@ type ReplaceFileRequest struct {
 	Size   int64  `json:"size"`
 }
 
-// ReplaceFile points the file entry with the given UUID at new content
-// (PUT /files/{uuid}), replacing its fileId and size.
+// ReplaceFile points the file entry with the given UUID at new content (PUT /files/{uuid}), replacing its fileId and size.
+// The response is authoritative; subsequent reads can briefly serve the pre-replace state (see GetFileMeta).
 func (f *FilesService) ReplaceFile(ctx context.Context, fileUUID string, req *ReplaceFileRequest) (*File, error) {
 	endpoint := path.Join(filesPath, fileUUID)
 	var replacedFile File
@@ -259,6 +266,7 @@ var ErrMissingFileID = errors.New("fileId is required")
 // (dedup) or to finish an upload interrupted after the transfer succeeded.
 //
 // Empty files are rejected client-side because they are not supported by the API.
+// The created entry can be 404 on first reads for a few seconds (see GetFileMeta).
 func (f *FilesService) CreateFileEntry(ctx context.Context, req *CreateMetaRequest) (*CreateMetaResponse, error) {
 	if req == nil {
 		return nil, errors.New("CreateFileEntry: request is nil")

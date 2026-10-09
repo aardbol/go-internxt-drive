@@ -61,6 +61,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `RootFolderUUID string` (`rootFolderId`, the root folder UUID).
 - Uploads reject a non-positive size up front (`ErrInvalidUploadSize`).
 - `Transfer` no longer applies a hardcoded 15-minute timeout; use the context.
+- Documented Internxt's server-side propagation windows on the file lifecycle: freshly created
+  entries can 404 briefly on reads, mutations can briefly read back stale, and just-uploaded
+  files go through a maturation window where moves answer 404/422.
+  Client behavior is unchanged; poll with your context budget where you need read-your-writes.
 
 ### Removed
 
