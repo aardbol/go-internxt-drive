@@ -16,6 +16,11 @@ Currently supports:
   - Delete
   - Rename
   - Move
+  - List
+  - Count
+  - Lookup by path
+  - Replace content
+  - Thumbnail entries
 - Folder
   - Create
   - Delete
@@ -37,53 +42,53 @@ Implementation is **WIP** and here's the current status.
 | POST   | `/drive/auth/login`                   | Get security details to log in                | Yes         |
 | POST   | `/drive/auth/login/access`            | Access user account                           | Yes         |
 | GET    | `/drive/auth/logout`                  | Log out of the account                        | Yes         |
-| GET    | `/drive/auth/tfa`                     | Get two-factor authentication                 | Yes          |
-| PUT    | `/drive/auth/tfa`                     | Update two-factor authentication              | Yes          |
-| DELETE | `/drive/auth/tfa`                     | Delete two-factor authentication              | Yes          |
-| GET    | `/drive/auth/are-credentials-correct` | Check if current user credentials are correct | Yes          |
+| GET    | `/drive/auth/tfa`                     | Get two-factor authentication                 | Yes         |
+| PUT    | `/drive/auth/tfa`                     | Update two-factor authentication              | Yes         |
+| DELETE | `/drive/auth/tfa`                     | Delete two-factor authentication              | Yes         |
+| GET    | `/drive/auth/are-credentials-correct` | Check if current user credentials are correct | Yes         |
 
 ### File
 
-| Method | Endpoint                           | Description                           | Implemented |
-| ------ | ---------------------------------- | ------------------------------------- | ----------- |
-| POST   | `/drive/files`                     | Create File                           | No          |
-| GET    | `/drive/files`                     | —                                     | No          |
-| GET    | `/drive/files/count`               | —                                     | No          |
-| GET    | `/drive/files/{uuid}/meta`         | —                                     | Yes          |
-| PUT    | `/drive/files/{uuid}/meta`         | Update File data                      | Yes          |
-| PUT    | `/drive/files/{uuid}`              | —                                     | No          |
-| PATCH  | `/drive/files/{uuid}`              | Move a file to a new dir UUID         | Yes          |
-| DELETE | `/drive/files/{uuid}`              | Delete file from storage and database | Yes         |
-| GET    | `/drive/files/recents`             | Retrieves a list of recent files with the given limit                                     | Yes          |
-| GET    | `/drive/files/meta`                | —                                     | No          |
-| POST   | `/drive/files/thumbnail`           | Create Thumbnail                      | No          |
-| DELETE | `/drive/files/{bucketId}/{fileId}` | Delete file from storage by fileId    | No          |
+| Method | Endpoint                           | Description                                           | Implemented |
+| ------ | ---------------------------------- | ----------------------------------------------------- | ----------- |
+| POST   | `/drive/files`                     | Create file entry for stored content                  | Yes         |
+| GET    | `/drive/files`                     | Paginated file listing                                | Yes         |
+| GET    | `/drive/files/count`               | Total file count                                      | Yes         |
+| GET    | `/drive/files/{uuid}/meta`         | —                                                     | Yes         |
+| PUT    | `/drive/files/{uuid}/meta`         | Update File data                                      | Yes         |
+| PUT    | `/drive/files/{uuid}`              | Replace file content reference                        | Yes         |
+| PATCH  | `/drive/files/{uuid}`              | Move a file to a new dir UUID                         | Yes         |
+| DELETE | `/drive/files/{uuid}`              | Delete file from storage and database                 | Yes         |
+| GET    | `/drive/files/recents`             | Retrieves a list of recent files with the given limit | Yes         |
+| GET    | `/drive/files/meta`                | File metadata by full path                            | Yes         |
+| POST   | `/drive/files/thumbnail`           | Create Thumbnail                                      | Yes         |
+| DELETE | `/drive/files/{bucketId}/{fileId}` | Delete file from storage by fileId                    | No          |
 
 ### Folder
 
-| Method | Endpoint                                          | Description                     | Implemented |
-| ------ | ------------------------------------------------- | ------------------------------- | ----------- |
-| POST   | `/drive/folders`                                  | Create Folder                   | Yes         |
-| DELETE | `/drive/folders`                                  | —                               | Yes         |
-| GET    | `/drive/folders`                                  | —                               | No          |
-| GET    | `/drive/folders/count`                            | —                               | No          |
-| GET    | `/drive/folders/content/{uuid}/files`             | —                               | Yes         |
-| GET    | `/drive/folders/{id}/files`                       | —                               | No          |
-| GET    | `/drive/folders/{id}/file`                        | —                               | No          |
-| GET    | `/drive/folders/content/{uuid}/folders`           | —                               | Yes         |
-| POST   | `/drive/folders/content/{uuid}/folders/existence` | Checks folders existence (POST) | No          |
-| POST   | `/drive/folders/content/{uuid}/files/existence`   | Checks files existence          | No          |
-| GET    | `/drive/folders/content/{uuid}`                   | Gets folder content             | No          |
-| GET    | `/drive/folders/{id}/folders`                     | —                               | No          |
-| GET    | `/drive/folders/{uuid}/meta`                      | Retrieves metadata for a folder by UUID                               | Yes          |
-| PUT    | `/drive/folders/{uuid}/meta`                      | Renames a folder                | Yes         |
-| GET    | `/drive/folders/{uuid}/ancestors`                 | Retrieves the ancestor folders of the given folder UUID                               | Yes          |
-| GET    | `/drive/folders/{uuid}/tree`                      | Retrieves a full recursive folder tree starting from the given UUID                               | Yes          | 
-| GET    | `/drive/folders/{id}/metadata`                    | Retrieves metadata for a folder by numeric ID                               | Yes          |
-| GET    | `/drive/folders/{uuid}/size`                      | —                               | Yes         |
-| PATCH  | `/drive/folders/{uuid}`                           | Moves folder to a new parent    | Yes         |
-| DELETE | `/drive/folders/{uuid}`                           | Delete Folder                   | Yes         |
-| GET    | `/drive/folders/meta`                             | Retrieves folder metadata using a full path string                               | Yes          |
+| Method | Endpoint                                          | Description                                                         | Implemented |
+| ------ | ------------------------------------------------- | ------------------------------------------------------------------- | ----------- |
+| POST   | `/drive/folders`                                  | Create Folder                                                       | Yes         |
+| DELETE | `/drive/folders`                                  | —                                                                   | Yes         |
+| GET    | `/drive/folders`                                  | —                                                                   | No          |
+| GET    | `/drive/folders/count`                            | —                                                                   | No          |
+| GET    | `/drive/folders/content/{uuid}/files`             | —                                                                   | Yes         |
+| GET    | `/drive/folders/{id}/files`                       | —                                                                   | No          |
+| GET    | `/drive/folders/{id}/file`                        | —                                                                   | No          |
+| GET    | `/drive/folders/content/{uuid}/folders`           | —                                                                   | Yes         |
+| POST   | `/drive/folders/content/{uuid}/folders/existence` | Checks folders existence (POST)                                     | No          |
+| POST   | `/drive/folders/content/{uuid}/files/existence`   | Checks files existence                                              | No          |
+| GET    | `/drive/folders/content/{uuid}`                   | Gets folder content                                                 | No          |
+| GET    | `/drive/folders/{id}/folders`                     | —                                                                   | No          |
+| GET    | `/drive/folders/{uuid}/meta`                      | Retrieves metadata for a folder by UUID                             | Yes         |
+| PUT    | `/drive/folders/{uuid}/meta`                      | Renames a folder                                                    | Yes         |
+| GET    | `/drive/folders/{uuid}/ancestors`                 | Retrieves the ancestor folders of the given folder UUID             | Yes         |
+| GET    | `/drive/folders/{uuid}/tree`                      | Retrieves a full recursive folder tree starting from the given UUID | Yes         |
+| GET    | `/drive/folders/{id}/metadata`                    | Retrieves metadata for a folder by numeric ID                       | Yes         |
+| GET    | `/drive/folders/{uuid}/size`                      | —                                                                   | Yes         |
+| PATCH  | `/drive/folders/{uuid}`                           | Moves folder to a new parent                                        | Yes         |
+| DELETE | `/drive/folders/{uuid}`                           | Delete Folder                                                       | Yes         |
+| GET    | `/drive/folders/meta`                             | Retrieves folder metadata using a full path string                  | Yes         |
 
 ### Share
 
